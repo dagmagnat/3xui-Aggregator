@@ -9,6 +9,34 @@ const { randomUUID } = require('crypto');
 const fetch = require('node-fetch');
 const { encrypt, decrypt } = require('./lib_crypto');
 
+const COUNTRIES = [
+  { code: 'NL', name_ru: 'Нидерланды', flag: '🇳🇱' },
+  { code: 'DE', name_ru: 'Германия', flag: '🇩🇪' },
+  { code: 'FI', name_ru: 'Финляндия', flag: '🇫🇮' },
+  { code: 'AM', name_ru: 'Армения', flag: '🇦🇲' },
+  { code: 'RU', name_ru: 'Россия', flag: '🇷🇺' },
+  { code: 'US', name_ru: 'США', flag: '🇺🇸' },
+  { code: 'FR', name_ru: 'Франция', flag: '🇫🇷' },
+  { code: 'GB', name_ru: 'Великобритания', flag: '🇬🇧' },
+  { code: 'PL', name_ru: 'Польша', flag: '🇵🇱' },
+  { code: 'SE', name_ru: 'Швеция', flag: '🇸🇪' },
+  { code: 'NO', name_ru: 'Норвегия', flag: '🇳🇴' },
+  { code: 'CH', name_ru: 'Швейцария', flag: '🇨🇭' },
+  { code: 'AT', name_ru: 'Австрия', flag: '🇦🇹' },
+  { code: 'CZ', name_ru: 'Чехия', flag: '🇨🇿' },
+  { code: 'ES', name_ru: 'Испания', flag: '🇪🇸' },
+  { code: 'IT', name_ru: 'Италия', flag: '🇮🇹' },
+  { code: 'TR', name_ru: 'Турция', flag: '🇹🇷' },
+  { code: 'CA', name_ru: 'Канада', flag: '🇨🇦' },
+  { code: 'JP', name_ru: 'Япония', flag: '🇯🇵' },
+  { code: 'SG', name_ru: 'Сингапур', flag: '🇸🇬' }
+];
+
+function getCountryFlag(countryName) {
+  const found = COUNTRIES.find(c => c.name_ru === countryName);
+  return found?.flag || '🌐';
+}
+
 const app = express();
 const db = new Database('./data/app.db');
 
@@ -16,6 +44,7 @@ const PORT = Number(process.env.PORT || 3000);
 const APP_SECRET = process.env.APP_SECRET || 'change-me';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'change-session-secret';
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+const DEFAULT_SUBSCRIPTION_NAME = process.env.SUBSCRIPTION_NAME || 'VPN';
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
 
@@ -44,6 +73,12 @@ function initDb() {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS nodes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -55,6 +90,9 @@ function initDb() {
       enabled INTEGER NOT NULL DEFAULT 1,
       last_status TEXT DEFAULT 'unknown',
       last_error TEXT DEFAULT '',
+      country_code TEXT DEFAULT '',
+      country_name_ru TEXT DEFAULT '',
+      country_flag TEXT DEFAULT '',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -80,10 +118,19 @@ function initDb() {
     );
   `);
 
+  try { db.prepare(`ALTER TABLE nodes ADD COLUMN country_code TEXT DEFAULT ''`).run(); } catch (_) {}
+  try { db.prepare(`ALTER TABLE nodes ADD COLUMN country_name_ru TEXT DEFAULT ''`).run(); } catch (_) {}
+  try { db.prepare(`ALTER TABLE nodes ADD COLUMN country_flag TEXT DEFAULT ''`).run(); } catch (_) {}
+
   const existingAdmin = db.prepare('SELECT id FROM app_users WHERE username = ?').get(ADMIN_USERNAME);
   if (!existingAdmin) {
     const passwordHash = bcrypt.hashSync(ADMIN_PASSWORD, 10);
     db.prepare('INSERT INTO app_users (username, password_hash) VALUES (?, ?)').run(ADMIN_USERNAME, passwordHash);
+  }
+
+  const existingSubName = db.prepare('SELECT value FROM app_settings WHERE key = ?').get('subscription_name');
+  if (!existingSubName) {
+    db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?)').run('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
   }
 }
 
@@ -101,26 +148,16 @@ function render(res, view, params = {}) {
   });
 }
 
+function getSetting(key, fallback = '') {
+  const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key);
+  return row?.value ?? fallback;
+}
+
 function normalizeRootUrl(panelUrl, panelPath) {
   let url = (panelUrl || '').trim().replace(/\/$/, '');
   let path = (panelPath || '').trim();
   if (path && !path.startsWith('/')) path = `/${path}`;
   return `${url}${path}`.replace(/\/$/, '');
-}
-
-async function loginNode(node) {
-  const rootUrl = normalizeRootUrl(node.panel_url, node.panel_path);
-  const password = decrypt(node.password_enc, APP_SECRET);
-  const response = await fetch(`${rootUrl}/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-    body: JSON.stringify({ username: node.username, password })
-  });
-  const setCookie = response.headers.raw()['set-cookie'] || [];
-  const cookie = setCookie.map(c => c.split(';')[0]).join('; ');
-  const data = await safeJson(response);
-  if (!response.ok && !cookie) throw new Error(data?.msg || `Login failed (${response.status})`);
-  return { rootUrl, cookie };
 }
 
 async function safeJson(response) {
@@ -132,10 +169,72 @@ async function safeJson(response) {
   }
 }
 
+function extractCookieHeader(response) {
+  if (!response || !response.headers) return '';
+
+  if (typeof response.headers.raw === 'function') {
+    const rawCookies = response.headers.raw()['set-cookie'] || [];
+    return rawCookies.map(c => c.split(';')[0]).join('; ');
+  }
+
+  if (typeof response.headers.get === 'function') {
+    const cookie = response.headers.get('set-cookie');
+    if (cookie) return cookie.split(';')[0];
+  }
+
+  return '';
+}
+
+function safeParseJsonField(value, fallback = {}) {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'object') return value;
+
+  const text = String(value).trim();
+  if (!text) return fallback;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return fallback;
+  }
+}
+
+async function loginNode(node) {
+  const rootUrl = normalizeRootUrl(node.panel_url, node.panel_path);
+  const password = decrypt(node.password_enc, APP_SECRET);
+
+  const body = new URLSearchParams({
+    username: node.username,
+    password: password
+  });
+
+  const response = await fetch(`${rootUrl}/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json, text/plain, */*'
+    },
+    body: body.toString(),
+    redirect: 'manual'
+  });
+
+  const cookie = extractCookieHeader(response);
+  const data = await safeJson(response);
+
+  if (!cookie) {
+    throw new Error(data?.msg || `Login failed (${response.status})`);
+  }
+
+  return { rootUrl, cookie };
+}
+
 async function apiGet(node, path) {
   const { rootUrl, cookie } = await loginNode(node);
   const response = await fetch(`${rootUrl}${path}`, {
-    headers: { 'Accept': 'application/json', 'Cookie': cookie }
+    headers: {
+      'Accept': 'application/json',
+      'Cookie': cookie
+    }
   });
   const data = await safeJson(response);
   if (!response.ok) throw new Error(data?.msg || `GET ${path} failed (${response.status})`);
@@ -146,6 +245,7 @@ async function apiPost(node, path, body, asForm = false) {
   const { rootUrl, cookie } = await loginNode(node);
   let headers = { 'Accept': 'application/json', 'Cookie': cookie };
   let payload;
+
   if (asForm) {
     headers['Content-Type'] = 'application/x-www-form-urlencoded';
     payload = new URLSearchParams(flattenForm(body)).toString();
@@ -153,19 +253,24 @@ async function apiPost(node, path, body, asForm = false) {
     headers['Content-Type'] = 'application/json';
     payload = JSON.stringify(body);
   }
+
   const response = await fetch(`${rootUrl}${path}`, {
     method: 'POST',
     headers,
     body: payload
   });
+
   const data = await safeJson(response);
-  if (!response.ok || data?.success === false) throw new Error(data?.msg || `POST ${path} failed (${response.status})`);
+  if (!response.ok || data?.success === false) {
+    throw new Error(data?.msg || `POST ${path} failed (${response.status})`);
+  }
   return data;
 }
 
 function flattenForm(obj, prefix = '', out = {}) {
   Object.entries(obj).forEach(([key, value]) => {
     const formKey = prefix ? `${prefix}[${key}]` : key;
+
     if (Array.isArray(value)) {
       value.forEach((item, index) => {
         if (typeof item === 'object' && item !== null) {
@@ -180,6 +285,7 @@ function flattenForm(obj, prefix = '', out = {}) {
       out[formKey] = value;
     }
   });
+
   return out;
 }
 
@@ -199,9 +305,19 @@ async function addClient(node, payload) {
 
 async function deleteClient(node, clientUuid, email) {
   try {
-    return await apiPost(node, `/panel/api/inbounds/${node.inbound_id}/delClient/${encodeURIComponent(clientUuid)}`, {}, true);
+    return await apiPost(
+      node,
+      `/panel/api/inbounds/${node.inbound_id}/delClient/${encodeURIComponent(clientUuid)}`,
+      {},
+      true
+    );
   } catch {
-    return apiPost(node, `/panel/api/inbounds/${node.inbound_id}/delClientByEmail/${encodeURIComponent(email)}`, {}, true);
+    return apiPost(
+      node,
+      `/panel/api/inbounds/${node.inbound_id}/delClientByEmail/${encodeURIComponent(email)}`,
+      {},
+      true
+    );
   }
 }
 
@@ -209,17 +325,36 @@ async function checkNode(node) {
   try {
     await apiGet(node, '/panel/api/server/status');
     await getInbounds(node);
-    db.prepare('UPDATE nodes SET last_status = ?, last_error = ? WHERE id = ?').run('online', '', node.id);
+    db.prepare('UPDATE nodes SET last_status = ?, last_error = ? WHERE id = ?')
+      .run('online', '', node.id);
     return { ok: true, status: 'online' };
   } catch (err) {
-    db.prepare('UPDATE nodes SET last_status = ?, last_error = ? WHERE id = ?').run('offline', String(err.message || err), node.id);
+    db.prepare('UPDATE nodes SET last_status = ?, last_error = ? WHERE id = ?')
+      .run('offline', String(err.message || err), node.id);
     return { ok: false, status: 'offline', error: String(err.message || err) };
   }
 }
 
 async function buildSubscriptionLines(clientRow, includeOffline = true) {
   const rows = db.prepare(`
-    SELECT cn.remote_sub_url, n.name, n.enabled, n.last_status
+    SELECT
+      cn.id AS client_node_id,
+      cn.remote_sub_url,
+      cn.remote_uuid,
+      cn.remote_email,
+      n.id AS node_id,
+      n.name,
+      n.panel_url,
+      n.panel_path,
+      n.username,
+      n.password_enc,
+      n.inbound_id,
+      n.enabled,
+      n.last_status,
+      n.last_error,
+      n.country_code,
+      n.country_name_ru,
+      n.country_flag
     FROM client_nodes cn
     JOIN nodes n ON n.id = cn.node_id
     WHERE cn.client_id = ?
@@ -227,33 +362,97 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
   `).all(clientRow.id);
 
   const lines = [];
+
   for (const row of rows) {
-    if (!row.remote_sub_url) continue;
-    if (!includeOffline && row.last_status === 'offline') continue;
-    lines.push(row.remote_sub_url);
+    try {
+      if (!includeOffline && row.last_status === 'offline') continue;
+
+      const inbound = await getInbound(row);
+      const stream = safeParseJsonField(inbound.streamSettings, {});
+
+      let subUrl = '';
+      if (inbound.protocol === 'vless' && stream.security === 'reality') {
+        const cleanCountryName = `${row.country_name_ru || row.name}`.trim();
+        const nodeLabel = `${getCountryFlag(cleanCountryName)} ${cleanCountryName}`.trim();
+        subUrl = buildVlessRealityLink(row, inbound, row.remote_uuid, clientRow.display_name, nodeLabel);
+      }
+
+      if (subUrl) {
+        lines.push(subUrl);
+        db.prepare(`
+          UPDATE client_nodes
+          SET remote_sub_url = ?
+          WHERE id = ?
+        `).run(subUrl, row.client_node_id);
+      } else if (row.remote_sub_url) {
+        lines.push(row.remote_sub_url);
+      }
+    } catch (err) {
+      if (includeOffline && row.remote_sub_url) {
+        lines.push(row.remote_sub_url);
+      }
+    }
   }
+
   return lines;
 }
 
-function buildVlessRealityLink(inbound, uuid, displayName, nodeName) {
-  const streamSettings = typeof inbound.streamSettings === 'string' ? JSON.parse(inbound.streamSettings || '{}') : (inbound.streamSettings || {});
-  const settings = typeof inbound.settings === 'string' ? JSON.parse(inbound.settings || '{}') : (inbound.settings || {});
+function buildVlessRealityLink(node, inbound, uuid, displayName, nodeName) {
+  const streamSettings = safeParseJsonField(inbound.streamSettings, {});
+  const settings = safeParseJsonField(inbound.settings, {});
   const realitySettings = streamSettings?.realitySettings || {};
-  const host = realitySettings.dest ? String(realitySettings.dest).split(':')[0] : '';
-  const port = realitySettings.dest ? Number(String(realitySettings.dest).split(':')[1] || 443) : (inbound.port || 443);
-  const pbk = realitySettings.settings?.publicKey || '';
-  const sni = realitySettings.serverNames?.[0] || '';
-  const sid = realitySettings.shortIds?.[0] || '';
-  const fp = 'chrome';
-  const flow = settings.clients?.[0]?.flow || '';
-  const query = new URLSearchParams({ type: streamSettings.network || 'tcp', security: 'reality', pbk, fp, sni, sid, spx: '/' });
+  const realityInner = realitySettings?.settings || {};
+
+  const panelUrl = new URL(node.panel_url);
+  const host = panelUrl.hostname;
+  const port = inbound.port || panelUrl.port || 443;
+
+  const pbk =
+    realityInner?.publicKey ||
+    realitySettings?.publicKey ||
+    '';
+
+  const sni =
+    realitySettings?.serverNames?.[0] ||
+    realityInner?.serverNames?.[0] ||
+    realitySettings?.targetSni ||
+    '';
+
+  const sid =
+    realitySettings?.shortIds?.[0] ||
+    realityInner?.shortIds?.[0] ||
+    '';
+
+  const fp =
+    realityInner?.fingerprint ||
+    realitySettings?.fingerprint ||
+    streamSettings?.fingerprint ||
+    'chrome';
+
+  const flow =
+    settings?.clients?.[0]?.flow ||
+    '';
+
+  const query = new URLSearchParams({
+    type: streamSettings.network || 'tcp',
+    security: 'reality',
+    pbk,
+    fp,
+    sni,
+    sid,
+    spx: '/'
+  });
+
   if (flow) query.set('flow', flow);
-  const remark = encodeURIComponent(`${displayName} | ${nodeName}`);
+
+  const remark = encodeURIComponent(nodeName);
   return `vless://${uuid}@${host}:${port}?${query.toString()}#${remark}`;
 }
 
 app.get('/', requireAuth, (req, res) => res.redirect('/dashboard'));
+
 app.get('/login', (req, res) => render(res, 'login', { error: null }));
+
 app.post('/login', (req, res) => {
   const user = db.prepare('SELECT * FROM app_users WHERE username = ?').get(req.body.username || '');
   if (!user || !bcrypt.compareSync(req.body.password || '', user.password_hash)) {
@@ -262,7 +461,10 @@ app.post('/login', (req, res) => {
   req.session.userId = user.id;
   res.redirect('/dashboard');
 });
-app.post('/logout', requireAuth, (req, res) => req.session.destroy(() => res.redirect('/login')));
+
+app.post('/logout', requireAuth, (req, res) => {
+  req.session.destroy(() => res.redirect('/login'));
+});
 
 app.get('/dashboard', requireAuth, (req, res) => {
   const stats = {
@@ -271,24 +473,86 @@ app.get('/dashboard', requireAuth, (req, res) => {
     online: db.prepare("SELECT COUNT(*) AS c FROM nodes WHERE last_status = 'online'").get().c,
     offline: db.prepare("SELECT COUNT(*) AS c FROM nodes WHERE last_status = 'offline'").get().c,
   };
+
   const nodes = db.prepare('SELECT * FROM nodes ORDER BY id DESC').all();
   const clients = db.prepare('SELECT * FROM clients ORDER BY id DESC LIMIT 10').all();
+
   render(res, 'dashboard', { stats, nodes, clients, baseUrl: BASE_URL });
+});
+
+app.get('/settings', requireAuth, (req, res) => {
+  const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
+  render(res, 'settings', {
+    subscriptionName,
+    message: req.query.message || '',
+    error: req.query.error || ''
+  });
+});
+
+app.post('/settings', requireAuth, (req, res) => {
+  try {
+    const subscriptionName = String(req.body.subscription_name || '').trim();
+    if (!subscriptionName) throw new Error('Нужно указать название подписки');
+
+    db.prepare(`
+      INSERT INTO app_settings (key, value, updated_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = CURRENT_TIMESTAMP
+    `).run('subscription_name', subscriptionName);
+
+    res.redirect('/settings?message=' + encodeURIComponent('Настройки сохранены'));
+  } catch (err) {
+    res.redirect('/settings?error=' + encodeURIComponent(String(err.message || err)));
+  }
 });
 
 app.get('/nodes', requireAuth, (req, res) => {
   const nodes = db.prepare('SELECT * FROM nodes ORDER BY id DESC').all();
-  render(res, 'nodes', { nodes, message: req.query.message || '', error: req.query.error || '' });
+  render(res, 'nodes', {
+    nodes,
+    countries: COUNTRIES,
+    message: req.query.message || '',
+    error: req.query.error || ''
+  });
 });
 
 app.post('/nodes', requireAuth, async (req, res) => {
   try {
-    const { name, panel_url, panel_path, username, password, inbound_id } = req.body;
-    const info = db.prepare(`INSERT INTO nodes (name, panel_url, panel_path, username, password_enc, inbound_id)
-      VALUES (?, ?, ?, ?, ?, ?)`)
-      .run(name, panel_url, panel_path || '', username, encrypt(password, APP_SECRET), Number(inbound_id));
+    const { panel_url, panel_path, username, password, inbound_id, country_code } = req.body;
+
+    const country = COUNTRIES.find(c => c.code === country_code);
+    if (!country) throw new Error('Страна не найдена');
+
+    const info = db.prepare(`
+      INSERT INTO nodes (
+        name,
+        panel_url,
+        panel_path,
+        username,
+        password_enc,
+        inbound_id,
+        country_code,
+        country_name_ru,
+        country_flag
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      country.name_ru,
+      panel_url,
+      panel_path || '',
+      username,
+      encrypt(password, APP_SECRET),
+      Number(inbound_id),
+      country.code,
+      country.name_ru,
+      country.flag
+    );
+
     const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(info.lastInsertRowid);
     await checkNode(node);
+
     res.redirect('/nodes?message=' + encodeURIComponent('Узел добавлен и проверен'));
   } catch (err) {
     res.redirect('/nodes?error=' + encodeURIComponent(String(err.message || err)));
@@ -298,9 +562,85 @@ app.post('/nodes', requireAuth, async (req, res) => {
 app.post('/nodes/:id/check', requireAuth, async (req, res) => {
   const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(Number(req.params.id));
   if (!node) return res.redirect('/nodes?error=' + encodeURIComponent('Узел не найден'));
+
   const result = await checkNode(node);
   const msg = result.ok ? 'Узел онлайн' : `Узел офлайн: ${result.error}`;
+
   res.redirect('/nodes?message=' + encodeURIComponent(msg));
+});
+
+app.get('/nodes/:id/edit', requireAuth, (req, res) => {
+  const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(Number(req.params.id));
+  if (!node) {
+    return res.redirect('/nodes?error=' + encodeURIComponent('Узел не найден'));
+  }
+
+  render(res, 'node_edit', {
+    node,
+    countries: COUNTRIES,
+    message: req.query.message || '',
+    error: req.query.error || ''
+  });
+});
+
+app.post('/nodes/:id/edit', requireAuth, async (req, res) => {
+  try {
+    const nodeId = Number(req.params.id);
+    const existingNode = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId);
+    if (!existingNode) {
+      return res.redirect('/nodes?error=' + encodeURIComponent('Узел не найден'));
+    }
+
+    const {
+      panel_url,
+      panel_path,
+      username,
+      password,
+      inbound_id,
+      country_code
+    } = req.body;
+
+    const country = COUNTRIES.find(c => c.code === country_code);
+    if (!country) throw new Error('Страна не найдена');
+
+    const updatedName = country.name_ru;
+    const updatedPasswordEnc = String(password || '').trim()
+      ? encrypt(String(password).trim(), APP_SECRET)
+      : existingNode.password_enc;
+
+    db.prepare(`
+      UPDATE nodes
+      SET
+        name = ?,
+        panel_url = ?,
+        panel_path = ?,
+        username = ?,
+        password_enc = ?,
+        inbound_id = ?,
+        country_code = ?,
+        country_name_ru = ?,
+        country_flag = ?
+      WHERE id = ?
+    `).run(
+      updatedName,
+      String(panel_url || '').trim(),
+      String(panel_path || '').trim(),
+      String(username || '').trim(),
+      updatedPasswordEnc,
+      Number(inbound_id),
+      country.code,
+      country.name_ru,
+      country.flag,
+      nodeId
+    );
+
+    const updatedNode = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId);
+    await checkNode(updatedNode);
+
+    res.redirect('/nodes?message=' + encodeURIComponent('Узел обновлён'));
+  } catch (err) {
+    res.redirect('/nodes/' + req.params.id + '/edit?error=' + encodeURIComponent(String(err.message || err)));
+  }
 });
 
 app.post('/nodes/:id/delete', requireAuth, (req, res) => {
@@ -311,60 +651,86 @@ app.post('/nodes/:id/delete', requireAuth, (req, res) => {
 app.get('/clients', requireAuth, (req, res) => {
   const clients = db.prepare('SELECT * FROM clients ORDER BY id DESC').all();
   const nodes = db.prepare('SELECT * FROM nodes WHERE enabled = 1 ORDER BY id ASC').all();
-  render(res, 'clients', { clients, nodes, message: req.query.message || '', error: req.query.error || '', baseUrl: BASE_URL });
+
+  render(res, 'clients', {
+    clients,
+    nodes,
+    message: req.query.message || '',
+    error: req.query.error || '',
+    baseUrl: BASE_URL
+  });
 });
 
 app.post('/clients', requireAuth, async (req, res) => {
   try {
-    const { login, display_name } = req.body;
+    const { login, limit_ip, duration_days } = req.body;
     let nodeIds = req.body.node_ids || [];
+
     if (!Array.isArray(nodeIds)) nodeIds = [nodeIds];
     if (!nodeIds.length) throw new Error('Нужно выбрать хотя бы один узел');
+    if (!login || !String(login).trim()) throw new Error('Нужно указать логин');
+
+    const cleanLogin = String(login).trim();
+    const cleanDisplayName = cleanLogin;
+    const cleanLimitIp = Math.max(1, Number(limit_ip || 1));
+    const cleanDurationDays = Math.max(0, Number(duration_days || 0));
+    const expiryTime = cleanDurationDays > 0
+      ? Date.now() + cleanDurationDays * 24 * 60 * 60 * 1000
+      : 0;
 
     const uuid = randomUUID();
     const subSlug = randomUUID().replace(/-/g, '');
-    const clientInfo = db.prepare('INSERT INTO clients (login, display_name, uuid, sub_slug) VALUES (?, ?, ?, ?)')
-      .run(login, display_name || login, uuid, subSlug);
+
+    const clientInfo = db.prepare(`
+      INSERT INTO clients (login, display_name, uuid, sub_slug)
+      VALUES (?, ?, ?, ?)
+    `).run(cleanLogin, cleanDisplayName, uuid, subSlug);
+
     const clientId = clientInfo.lastInsertRowid;
 
     for (const nodeIdRaw of nodeIds) {
       const nodeId = Number(nodeIdRaw);
       const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId);
       if (!node) throw new Error(`Узел ${nodeId} не найден`);
+
       const inbound = await getInbound(node);
-      const settings = typeof inbound.settings === 'string' ? JSON.parse(inbound.settings || '{}') : (inbound.settings || {});
-      const clientEmail = `${login}@${node.name}`.replace(/\s+/g, '_');
+      const settings = safeParseJsonField(inbound.settings, {});
+      const stream = safeParseJsonField(inbound.streamSettings, {});
+
+      const clientEmail = `${cleanLogin}@${node.name}`.replace(/\s+/g, '_');
       const subId = randomUUID().replace(/-/g, '').slice(0, 16);
 
       const clientPayload = {
         id: Number(node.inbound_id),
-        settings: {
+        settings: JSON.stringify({
           clients: [{
             id: uuid,
             email: clientEmail,
             flow: settings.clients?.[0]?.flow || '',
-            limitIp: 0,
+            limitIp: cleanLimitIp,
             totalGB: 0,
-            expiryTime: 0,
+            expiryTime: expiryTime,
             enable: true,
             tgId: '',
             subId,
             reset: 0
           }]
-        }
+        })
       };
 
       await addClient(node, clientPayload);
 
       let subUrl = '';
-      const stream = typeof inbound.streamSettings === 'string' ? JSON.parse(inbound.streamSettings || '{}') : (inbound.streamSettings || {});
       if (inbound.protocol === 'vless' && stream.security === 'reality') {
-        subUrl = buildVlessRealityLink(inbound, uuid, display_name || login, node.name);
+        const cleanCountryName = `${node.country_name_ru || node.name}`.trim();
+        const nodeLabel = `${getCountryFlag(cleanCountryName)} ${cleanCountryName}`.trim();
+        subUrl = buildVlessRealityLink(node, inbound, uuid, cleanDisplayName, nodeLabel);
       }
 
-      db.prepare(`INSERT INTO client_nodes (client_id, node_id, remote_email, remote_uuid, remote_sub_url)
-        VALUES (?, ?, ?, ?, ?)`)
-        .run(clientId, node.id, clientEmail, uuid, subUrl);
+      db.prepare(`
+        INSERT INTO client_nodes (client_id, node_id, remote_email, remote_uuid, remote_sub_url)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(clientId, node.id, clientEmail, uuid, subUrl);
     }
 
     res.redirect('/clients?message=' + encodeURIComponent('Клиент создан на выбранных узлах'));
@@ -376,6 +742,7 @@ app.post('/clients', requireAuth, async (req, res) => {
 app.get('/clients/:id', requireAuth, async (req, res) => {
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(Number(req.params.id));
   if (!client) return res.status(404).send('Client not found');
+
   const mappings = db.prepare(`
     SELECT cn.*, n.name AS node_name, n.last_status, n.inbound_id
     FROM client_nodes cn
@@ -383,14 +750,23 @@ app.get('/clients/:id', requireAuth, async (req, res) => {
     WHERE cn.client_id = ?
     ORDER BY cn.id ASC
   `).all(client.id);
+
   const lines = await buildSubscriptionLines(client, true);
-  render(res, 'client_detail', { client, mappings, subscription: lines.join('\n'), baseUrl: BASE_URL });
+
+  render(res, 'client_detail', {
+    client,
+    mappings,
+    subscription: lines.join('\n'),
+    baseUrl: BASE_URL
+  });
 });
 
 app.post('/clients/:id/delete', requireAuth, async (req, res) => {
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(Number(req.params.id));
   if (!client) return res.redirect('/clients?error=' + encodeURIComponent('Клиент не найден'));
+
   const mappings = db.prepare('SELECT * FROM client_nodes WHERE client_id = ?').all(client.id);
+
   for (const map of mappings) {
     try {
       const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(map.node_id);
@@ -399,17 +775,44 @@ app.post('/clients/:id/delete', requireAuth, async (req, res) => {
       console.error('Delete remote client failed:', err.message);
     }
   }
+
   db.prepare('DELETE FROM client_nodes WHERE client_id = ?').run(client.id);
   db.prepare('DELETE FROM clients WHERE id = ?').run(client.id);
+
   res.redirect('/clients?message=' + encodeURIComponent('Клиент удалён'));
 });
 
 app.get('/sub/:slug', async (req, res) => {
   const client = db.prepare('SELECT * FROM clients WHERE sub_slug = ? AND enabled = 1').get(req.params.slug);
   if (!client) return res.status(404).send('Subscription not found');
+
   const lines = await buildSubscriptionLines(client, true);
-  res.type('text/plain').send(lines.join('\n'));
+  const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
+
+  const fileName = `${subscriptionName}.txt`;
+  const base64Title = Buffer.from(subscriptionName).toString('base64');
+
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+  res.setHeader('Profile-Title', `base64:${base64Title}`);
+
+  res.send(lines.join('\n'));
 });
 
-app.get('/healthz', async (req, res) => res.json({ ok: true, service: '3xui-aggregator', now: new Date().toISOString() }));
+app.get('/healthz', async (req, res) => {
+  res.json({ ok: true, service: '3xui-aggregator', now: new Date().toISOString() });
+});
+
+app.get('/debug/inbound/:nodeId', requireAuth, async (req, res) => {
+  try {
+    const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(Number(req.params.nodeId));
+    if (!node) return res.status(404).json({ error: 'node not found' });
+
+    const inbound = await getInbound(node);
+    res.json(inbound);
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
 app.listen(PORT, () => console.log(`3xui-aggregator started on :${PORT}`));

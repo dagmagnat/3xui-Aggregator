@@ -65,16 +65,11 @@
       <td><%= node.last_status %></td>
       <td><%= node.last_error || '' %></td>
       <td>
-        <a href="/nodes/<%= node.id %>/edit" style="display:inline-block; margin-right:8px;">
-          <button type="button" class="secondary" style="width:auto;">Редактировать</button>
-        </a>
-
         <form method="post" action="/nodes/<%= node.id %>/check" style="display:inline-block;">
-          <button type="submit" style="width:auto;">Проверить</button>
+          <button type="submit">Проверить</button>
         </form>
-
         <form method="post" action="/nodes/<%= node.id %>/delete" style="display:inline-block;" onsubmit="return confirm('Удалить узел?')">
-          <button class="danger" type="submit" style="width:auto;">Удалить</button>
+          <button class="danger" type="submit">Удалить</button>
         </form>
       </td>
     </tr>

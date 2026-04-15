@@ -2,7 +2,7 @@ services:
   aggregator:
     build: .
     container_name: 3xui-aggregator
-    restart: unless-stopped
+    restart: always
     ports:
       - "3000:3000"
     env_file:

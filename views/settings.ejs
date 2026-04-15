@@ -1,0 +1,32 @@
+<%- include('partials_header') %>
+
+<h1>Настройки</h1>
+
+<% if (message) { %><div class="alert ok"><%= message %></div><% } %>
+<% if (error) { %><div class="alert err"><%= error %></div><% } %>
+
+<div class="row">
+  <div class="card">
+    <h2>Общие настройки</h2>
+    <form method="post" action="/settings">
+      <label>Название подписки</label>
+      <input
+        name="subscription_name"
+        value="<%= subscriptionName %>"
+        placeholder="My VPN"
+        required
+      />
+
+      <button type="submit">Сохранить</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Что это меняет</h2>
+    <p>Это имя используется в общей подписке агрегатора.</p>
+    <p>Тебе больше не нужно менять SUBSCRIPTION_NAME вручную в .env.</p>
+    <p>После сохранения новые открытия подписки будут использовать новое имя.</p>
+  </div>
+</div>
+
+<%- include('partials_footer') %>

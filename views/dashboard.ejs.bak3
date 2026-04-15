@@ -20,7 +20,7 @@
       <tr><th>Имя</th><th>Статус</th></tr>
       <% nodes.forEach(node => { %>
       <tr>
-        <td><%= node.country_name_ru || node.name %></td>
+        <td><%= node.name %></td>
         <td><span class="badge <%= node.last_status %>"><%= node.last_status %></span></td>
       </tr>
       <% }) %>

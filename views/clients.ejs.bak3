@@ -22,7 +22,7 @@
         <% nodes.forEach(node => { %>
           <label>
             <input class="inline" type="checkbox" name="node_ids" value="<%= node.id %>" />
-            <%= node.country_name_ru || node.name %> (inbound <%= node.inbound_id %>)
+            <%= node.name %> (inbound <%= node.inbound_id %>)
           </label>
         <% }) %>
       </div>

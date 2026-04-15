@@ -1,0 +1,54 @@
+<%- include('partials_header') %>
+
+<h1>Редактировать узел</h1>
+
+<% if (message) { %><div class="alert ok"><%= message %></div><% } %>
+<% if (error) { %><div class="alert err"><%= error %></div><% } %>
+
+<div class="row">
+  <div class="card">
+    <h2>Параметры узла</h2>
+    <form method="post" action="/nodes/<%= node.id %>/edit">
+      <label>Страна</label>
+      <select name="country_code" required>
+        <% (countries || []).forEach(function(country) { %>
+          <option value="<%= country.code %>" <%= country.code === node.country_code ? 'selected' : '' %>>
+            <%= country.name_ru %>
+          </option>
+        <% }) %>
+      </select>
+
+      <label>URL панели</label>
+      <input name="panel_url" value="<%= node.panel_url %>" required />
+
+      <label>Скрытый путь панели</label>
+      <input name="panel_path" value="<%= node.panel_path || '' %>" />
+
+      <label>Логин 3x-ui</label>
+      <input name="username" value="<%= node.username %>" required />
+
+      <label>Новый пароль 3x-ui</label>
+      <input name="password" type="password" placeholder="Оставь пустым, чтобы не менять" />
+
+      <label>Inbound ID</label>
+      <input name="inbound_id" type="number" min="1" value="<%= node.inbound_id %>" required />
+
+      <button type="submit">Сохранить изменения</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Подсказка</h2>
+    <p>Если пароль менять не нужно — оставь поле пустым.</p>
+    <p>После сохранения узел автоматически проверится заново.</p>
+    <p>Имя узла в панели берётся из выбранной страны.</p>
+  </div>
+</div>
+
+<div class="card">
+  <a href="/nodes">
+    <button type="button" class="secondary" style="width:auto;">← Назад к узлам</button>
+  </a>
+</div>
+
+<%- include('partials_footer') %>
