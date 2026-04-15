@@ -225,9 +225,8 @@ branch="$BRANCH_DEFAULT"
       err "Порт ${app_port} уже занят. Выбери другой порт."
       exit 1
     fi
-    server_ip="$(curl -4 -fsSL https://api.ipify.org || true)"
-    server_ip="$(ask 'IP сервера для ссылки входа' "${server_ip:-YOUR_SERVER_IP}")"
-    base_url="http://${server_ip}:${app_port}"
+    server_ip="$(curl -4 -fsSL https://api.ipify.org || echo "127.0.0.1")"
+base_url="http://${server_ip}:${app_port}"
   elif [ "$install_mode" = "2" ]; then
     check_required_ports_for_domain
     domain="$(ask 'Домен для панели' '')"
