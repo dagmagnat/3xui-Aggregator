@@ -205,8 +205,8 @@ main() {
   install_docker_if_needed
 
   local repo_url branch install_mode app_port domain email base_url server_ip admin_user admin_pass
-  repo_url="$(ask 'URL GitHub репозитория' "$REPO_URL_DEFAULT")"
-  branch="$(ask 'Ветка GitHub' "$BRANCH_DEFAULT")"
+repo_url="$REPO_URL_DEFAULT"
+branch="$BRANCH_DEFAULT"
 
   echo
   say "Выбери режим установки:"
