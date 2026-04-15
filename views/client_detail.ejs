@@ -1,0 +1,26 @@
+<%- include('partials_header') %>
+<h1><%= client.display_name %></h1>
+<div class="card">
+  <p><strong>Логин:</strong> <%= client.login %></p>
+  <p><strong>UUID:</strong> <%= client.uuid %></p>
+  <p><strong>Общая подписка:</strong> <a href="<%= baseUrl %>/sub/<%= client.sub_slug %>" target="_blank"><%= baseUrl %>/sub/<%= client.sub_slug %></a></p>
+</div>
+<div class="card">
+  <h2>Узлы клиента</h2>
+  <table>
+    <tr><th>Узел</th><th>Статус</th><th>Email в 3x-ui</th><th>Ссылка</th></tr>
+    <% mappings.forEach(row => { %>
+    <tr>
+      <td><%= row.node_name %></td>
+      <td><span class="badge <%= row.last_status %>"><%= row.last_status %></span></td>
+      <td><%= row.remote_email %></td>
+      <td><pre><%= row.remote_sub_url %></pre></td>
+    </tr>
+    <% }) %>
+  </table>
+</div>
+<div class="card">
+  <h2>Агрегированная подписка</h2>
+  <pre><%= subscription %></pre>
+</div>
+<%- include('partials_footer') %>
