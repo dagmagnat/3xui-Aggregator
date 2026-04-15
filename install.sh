@@ -29,11 +29,21 @@ ask() {
   local value
   if [ -n "$default" ]; then
     read -r -p "$prompt [$default]: " value || true
+    value="${value//$'\r'/}"
     echo "${value:-$default}"
   else
     read -r -p "$prompt: " value || true
+    value="${value//$'\r'/}"
     echo "$value"
   fi
+}
+
+trim() {
+  local var="$1"
+  var="${var//$'\r'/}"
+  var="${var#"${var%%[![:space:]]*}"}"
+  var="${var%"${var##*[![:space:]]}"}"
+  echo "$var"
 }
 
 port_in_use() {
@@ -43,14 +53,17 @@ port_in_use() {
 
 check_required_ports_for_domain() {
   local bad=0
+
   if port_in_use 80; then
     err "Порт 80 уже занят. Для домена и SSL он должен быть свободен."
     bad=1
   fi
+
   if port_in_use 443; then
     err "Порт 443 уже занят. Для домена и SSL он должен быть свободен."
     bad=1
   fi
+
   if [ "$bad" -eq 1 ]; then
     warn "Если на этом сервере уже работает 3x-ui или другой reverse proxy на 80/443,"
     warn "то установку по домену этим скриптом лучше не продолжать."
@@ -121,6 +134,7 @@ EOF
 
 write_compose_ip() {
   local port="$1"
+
   cat > "$APP_DIR/docker-compose.yml" <<EOF
 services:
   aggregator:
@@ -139,12 +153,16 @@ EOF
 write_caddyfile() {
   local domain="$1"
   local email="$2"
+
+  domain="$(trim "$domain")"
+  email="$(trim "$email")"
+
   cat > "$APP_DIR/Caddyfile" <<EOF
 {
-    email ${email}
+    email $email
 }
 
-${domain} {
+$domain {
     encode gzip
     reverse_proxy aggregator:3000
 }
@@ -204,9 +222,9 @@ main() {
   install_packages
   install_docker_if_needed
 
-  local repo_url branch install_mode app_port domain email base_url server_ip admin_user admin_pass
-repo_url="$REPO_URL_DEFAULT"
-branch="$BRANCH_DEFAULT"
+  local repo_url branch install_mode app_port domain email base_url admin_user admin_pass server_ip
+  repo_url="$REPO_URL_DEFAULT"
+  branch="$BRANCH_DEFAULT"
 
   echo
   say "Выбери режим установки:"
@@ -215,6 +233,8 @@ branch="$BRANCH_DEFAULT"
   install_mode="$(ask 'Режим установки' '1')"
 
   app_port="$(ask 'Порт панели агрегатора' '3000')"
+  app_port="$(trim "$app_port")"
+
   if ! [[ "$app_port" =~ ^[0-9]+$ ]]; then
     err "Порт должен быть числом."
     exit 1
@@ -225,16 +245,35 @@ branch="$BRANCH_DEFAULT"
       err "Порт ${app_port} уже занят. Выбери другой порт."
       exit 1
     fi
+
     server_ip="$(curl -4 -fsSL https://api.ipify.org || echo "127.0.0.1")"
-base_url="http://${server_ip}:${app_port}"
+    server_ip="$(trim "$server_ip")"
+    base_url="http://${server_ip}:${app_port}"
+
   elif [ "$install_mode" = "2" ]; then
     check_required_ports_for_domain
-    domain="$(ask 'Домен для панели' '')"
-    email="$(ask 'Email для SSL (Let's Encrypt/Caddy)' '')"
+
+    domain="$(ask "Домен для панели" "")"
+    email="$(ask "Email для SSL (Let's Encrypt / Caddy)" "")"
+
+    domain="$(trim "$domain")"
+    email="$(trim "$email")"
+
     if [ -z "$domain" ] || [ -z "$email" ]; then
       err "Для доменного режима нужно указать и домен, и email."
       exit 1
     fi
+
+    if ! printf '%s' "$email" | grep -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'; then
+      err "Email введён некорректно."
+      exit 1
+    fi
+
+    if ! printf '%s' "$domain" | grep -Eq '^[A-Za-z0-9.-]+$'; then
+      err "Домен введён некорректно."
+      exit 1
+    fi
+
     base_url="https://${domain}"
   else
     err "Неизвестный режим установки."
@@ -242,7 +281,11 @@ base_url="http://${server_ip}:${app_port}"
   fi
 
   admin_user="$(ask 'Логин администратора панели' 'admin')"
+  admin_user="$(trim "$admin_user")"
+
   admin_pass="$(ask 'Пароль администратора панели' '')"
+  admin_pass="$(trim "$admin_pass")"
+
   if [ -z "$admin_pass" ]; then
     err "Пароль не должен быть пустым."
     exit 1
