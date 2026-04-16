@@ -13,9 +13,13 @@
     </a>
   </p>
 
-  <div style="margin-top:10px;">
-    <button type="button" onclick="copySubscriptionLink()">Скопировать ссылку подписки</button>
-  </div>
+  <button
+    type="button"
+    class="link-btn"
+    onclick="copySubLink('<%= baseUrl %>/sub/<%= client.sub_slug %>')"
+  >
+    Скопировать подписку
+  </button>
 </div>
 
 <div class="card">
@@ -23,21 +27,20 @@
 
   <form method="post" action="/clients/<%= client.id %>/sync">
     <div class="checkbox-list">
-      <% (nodes || []).forEach(node => { %>
-        <label style="display:block; margin-bottom:6px;">
-          <input class="inline" type="checkbox" name="node_ids" value="<%= node.id %>">
-          <%= node.name %> (inbound <%= node.inbound_id %>)
+      <% nodes.forEach(node => { %>
+        <label>
+          <input class="inline" type="checkbox" name="node_ids" value="<%= node.id %>" />
+          <%= node.country_name_ru || node.name %> (inbound <%= node.inbound_id %>)
         </label>
       <% }) %>
     </div>
 
-    <button type="submit" style="width:auto; margin-top:8px;">Добавить на выбранные узлы</button>
+    <button type="submit" style="margin-top:10px;">Добавить на выбранные узлы</button>
   </form>
 </div>
 
 <div class="card">
   <h2>Узлы клиента</h2>
-
   <table>
     <tr>
       <th>Узел</th>
@@ -49,9 +52,7 @@
     <% mappings.forEach(row => { %>
       <tr>
         <td><%= row.node_name %></td>
-        <td>
-          <span class="badge <%= row.last_status %>"><%= row.last_status %></span>
-        </td>
+        <td><span class="badge <%= row.last_status %>"><%= row.last_status %></span></td>
         <td><%= row.remote_email %></td>
         <td>
           <% if (row.remote_sub_url) { %>
@@ -71,13 +72,10 @@
 </div>
 
 <script>
-function copySubscriptionLink() {
-  const text = "<%= baseUrl %>/sub/<%= client.sub_slug %>";
-  navigator.clipboard.writeText(text).then(() => {
-    alert("Ссылка подписки скопирована");
-  }).catch(() => {
-    alert("Не удалось скопировать ссылку");
-  });
+function copySubLink(text) {
+  navigator.clipboard.writeText(text)
+    .then(() => alert('Ссылка подписки скопирована'))
+    .catch(() => alert('Не удалось скопировать ссылку'));
 }
 </script>
 
