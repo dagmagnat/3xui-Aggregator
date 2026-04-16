@@ -771,45 +771,109 @@ app.post('/clients', requireAuth, async (req, res) => {
 
 app.post('/clients/import', requireAuth, async (req, res) => {
   try {
-    const nodeId = Number(req.body.node_id);
-    const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId);
-    if (!node) throw new Error('Узел не найден');
+    const sourceNodeId = Number(req.body.node_id);
+    const sourceNode = db.prepare('SELECT * FROM nodes WHERE id = ?').get(sourceNodeId);
+    if (!sourceNode) throw new Error('Узел не найден');
 
-    const remoteClients = await importClientsFromNode(node);
+    const allNodes = db.prepare('SELECT * FROM nodes WHERE enabled = 1 ORDER BY id ASC').all();
+    if (!allNodes.length) throw new Error('Нет доступных узлов');
+
+    const remoteClients = await importClientsFromNode(sourceNode);
     let imported = 0;
 
     for (const rc of remoteClients) {
-      const exists = db.prepare('SELECT id FROM clients WHERE uuid = ?').get(rc.uuid);
-      if (exists) continue;
+      const existingClient = db.prepare('SELECT * FROM clients WHERE uuid = ?').get(rc.uuid);
 
-      const subSlug = randomUUID().replace(/-/g, '');
-      const displayName = rc.email;
-      const login = rc.email;
+      let clientId;
+      let clientRow;
 
-      const clientInfo = db.prepare(`
-        INSERT INTO clients (login, display_name, uuid, sub_slug)
-        VALUES (?, ?, ?, ?)
-      `).run(login, displayName, rc.uuid, subSlug);
+      if (existingClient) {
+        clientId = existingClient.id;
+        clientRow = existingClient;
+      } else {
+        const subSlug = randomUUID().replace(/-/g, '');
+        const displayName = rc.email;
+        const login = rc.email;
 
-      const inbound = await getInbound(node);
-      const stream = safeParseJsonField(inbound.streamSettings, {});
-      let subUrl = '';
+        const clientInfo = db.prepare(`
+          INSERT INTO clients (login, display_name, uuid, sub_slug)
+          VALUES (?, ?, ?, ?)
+        `).run(login, displayName, rc.uuid, subSlug);
 
-      if (inbound.protocol === 'vless' && stream.security === 'reality') {
-        const cleanCountryName = `${node.country_name_ru || node.name}`.trim();
-        const nodeLabel = `${getCountryFlag(cleanCountryName)} ${cleanCountryName}`.trim();
-        subUrl = buildVlessRealityLink(node, inbound, rc.uuid, displayName, nodeLabel);
+        clientId = clientInfo.lastInsertRowid;
+        clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
       }
 
-      db.prepare(`
-        INSERT INTO client_nodes (client_id, node_id, remote_email, remote_uuid, remote_sub_url)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(clientInfo.lastInsertRowid, node.id, rc.email, rc.uuid, subUrl);
+      for (const node of allNodes) {
+        const alreadyExists = db.prepare(`
+          SELECT id FROM client_nodes
+          WHERE client_id = ? AND node_id = ?
+        `).get(clientId, node.id);
+
+        if (alreadyExists) continue;
+
+        let inbound;
+        let settings;
+        let stream;
+
+        try {
+          inbound = await getInbound(node);
+          settings = safeParseJsonField(inbound.settings, {});
+          stream = safeParseJsonField(inbound.streamSettings, {});
+        } catch (err) {
+          console.error(`Не удалось получить inbound узла ${node.id}:`, err.message);
+          continue;
+        }
+
+        const clientEmail =
+          node.id === sourceNode.id
+            ? rc.email
+            : `${clientRow.login}@${node.name}`.replace(/\\s+/g, '_');
+
+        if (node.id !== sourceNode.id) {
+          const payload = {
+            id: Number(node.inbound_id),
+            settings: JSON.stringify({
+              clients: [{
+                id: clientRow.uuid,
+                email: clientEmail,
+                flow: rc.flow || settings.clients?.[0]?.flow || '',
+                limitIp: rc.limitIp || 1,
+                totalGB: 0,
+                expiryTime: rc.expiryTime || 0,
+                enable: rc.enable !== false,
+                tgId: rc.tgId || '',
+                subId: rc.subId || randomUUID().replace(/-/g, '').slice(0, 16),
+                reset: rc.reset || 0
+              }]
+            })
+          };
+
+          try {
+            await addClient(node, payload);
+          } catch (err) {
+            console.error(`Не удалось добавить клиента на узел ${node.id}:`, err.message);
+            continue;
+          }
+        }
+
+        let subUrl = '';
+        if (inbound.protocol === 'vless' && stream.security === 'reality') {
+          const cleanCountryName = `${node.country_name_ru || node.name}`.trim();
+          const nodeLabel = `${getCountryFlag(cleanCountryName)} ${cleanCountryName}`.trim();
+          subUrl = buildVlessRealityLink(node, inbound, clientRow.uuid, clientRow.display_name, nodeLabel);
+        }
+
+        db.prepare(`
+          INSERT INTO client_nodes (client_id, node_id, remote_email, remote_uuid, remote_sub_url)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(clientId, node.id, clientEmail, clientRow.uuid, subUrl);
+      }
 
       imported++;
     }
 
-    res.redirect('/clients?message=' + encodeURIComponent(`Импортировано клиентов: ${imported}`));
+    res.redirect('/clients?message=' + encodeURIComponent(`Импортировано и синхронизировано клиентов: ${imported}`));
   } catch (err) {
     res.redirect('/clients?error=' + encodeURIComponent(String(err.message || err)));
   }
