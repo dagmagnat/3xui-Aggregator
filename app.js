@@ -9,34 +9,6 @@ const { randomUUID } = require('crypto');
 const fetch = require('node-fetch');
 const { encrypt, decrypt } = require('./lib_crypto');
 
-const COUNTRIES = [
-  { code: 'NL', name_ru: 'Нидерланды', flag: '🇳🇱' },
-  { code: 'DE', name_ru: 'Германия', flag: '🇩🇪' },
-  { code: 'FI', name_ru: 'Финляндия', flag: '🇫🇮' },
-  { code: 'AM', name_ru: 'Армения', flag: '🇦🇲' },
-  { code: 'RU', name_ru: 'Россия', flag: '🇷🇺' },
-  { code: 'US', name_ru: 'США', flag: '🇺🇸' },
-  { code: 'FR', name_ru: 'Франция', flag: '🇫🇷' },
-  { code: 'GB', name_ru: 'Великобритания', flag: '🇬🇧' },
-  { code: 'PL', name_ru: 'Польша', flag: '🇵🇱' },
-  { code: 'SE', name_ru: 'Швеция', flag: '🇸🇪' },
-  { code: 'NO', name_ru: 'Норвегия', flag: '🇳🇴' },
-  { code: 'CH', name_ru: 'Швейцария', flag: '🇨🇭' },
-  { code: 'AT', name_ru: 'Австрия', flag: '🇦🇹' },
-  { code: 'CZ', name_ru: 'Чехия', flag: '🇨🇿' },
-  { code: 'ES', name_ru: 'Испания', flag: '🇪🇸' },
-  { code: 'IT', name_ru: 'Италия', flag: '🇮🇹' },
-  { code: 'TR', name_ru: 'Турция', flag: '🇹🇷' },
-  { code: 'CA', name_ru: 'Канада', flag: '🇨🇦' },
-  { code: 'JP', name_ru: 'Япония', flag: '🇯🇵' },
-  { code: 'SG', name_ru: 'Сингапур', flag: '🇸🇬' }
-];
-
-function getCountryFlag(countryName) {
-  const found = COUNTRIES.find(c => c.name_ru === countryName);
-  return found?.flag || '🌐';
-}
-
 const app = express();
 const db = new Database('./data/app.db');
 
@@ -44,7 +16,6 @@ const PORT = Number(process.env.PORT || 3000);
 const APP_SECRET = process.env.APP_SECRET || 'change-me';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'change-session-secret';
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
-const DEFAULT_SUBSCRIPTION_NAME = process.env.SUBSCRIPTION_NAME || 'VPN';
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
 
@@ -73,12 +44,6 @@ function initDb() {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE TABLE IF NOT EXISTS app_settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
     CREATE TABLE IF NOT EXISTS nodes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -90,9 +55,6 @@ function initDb() {
       enabled INTEGER NOT NULL DEFAULT 1,
       last_status TEXT DEFAULT 'unknown',
       last_error TEXT DEFAULT '',
-      country_code TEXT DEFAULT '',
-      country_name_ru TEXT DEFAULT '',
-      country_flag TEXT DEFAULT '',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -118,19 +80,10 @@ function initDb() {
     );
   `);
 
-  try { db.prepare(`ALTER TABLE nodes ADD COLUMN country_code TEXT DEFAULT ''`).run(); } catch (_) {}
-  try { db.prepare(`ALTER TABLE nodes ADD COLUMN country_name_ru TEXT DEFAULT ''`).run(); } catch (_) {}
-  try { db.prepare(`ALTER TABLE nodes ADD COLUMN country_flag TEXT DEFAULT ''`).run(); } catch (_) {}
-
   const existingAdmin = db.prepare('SELECT id FROM app_users WHERE username = ?').get(ADMIN_USERNAME);
   if (!existingAdmin) {
     const passwordHash = bcrypt.hashSync(ADMIN_PASSWORD, 10);
     db.prepare('INSERT INTO app_users (username, password_hash) VALUES (?, ?)').run(ADMIN_USERNAME, passwordHash);
-  }
-
-  const existingSubName = db.prepare('SELECT value FROM app_settings WHERE key = ?').get('subscription_name');
-  if (!existingSubName) {
-    db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?)').run('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
   }
 }
 
@@ -148,14 +101,9 @@ function render(res, view, params = {}) {
   });
 }
 
-function getSetting(key, fallback = '') {
-  const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key);
-  return row?.value ?? fallback;
-}
-
 function normalizeRootUrl(panelUrl, panelPath) {
-  let url = (panelUrl || '').trim().replace(/\/$/, '');
-  let path = (panelPath || '').trim();
+  let url = String(panelUrl || '').trim().replace(/\/$/, '');
+  let path = String(panelPath || '').trim();
   if (path && !path.startsWith('/')) path = `/${path}`;
   return `${url}${path}`.replace(/\/$/, '');
 }
@@ -205,7 +153,7 @@ async function loginNode(node) {
 
   const body = new URLSearchParams({
     username: node.username,
-    password: password
+    password
   });
 
   const response = await fetch(`${rootUrl}/login`, {
@@ -264,6 +212,7 @@ async function apiPost(node, path, body, asForm = false) {
   if (!response.ok || data?.success === false) {
     throw new Error(data?.msg || `POST ${path} failed (${response.status})`);
   }
+
   return data;
 }
 
@@ -335,68 +284,6 @@ async function checkNode(node) {
   }
 }
 
-async function buildSubscriptionLines(clientRow, includeOffline = true) {
-  const rows = db.prepare(`
-    SELECT
-      cn.id AS client_node_id,
-      cn.remote_sub_url,
-      cn.remote_uuid,
-      cn.remote_email,
-      n.id AS node_id,
-      n.name,
-      n.panel_url,
-      n.panel_path,
-      n.username,
-      n.password_enc,
-      n.inbound_id,
-      n.enabled,
-      n.last_status,
-      n.last_error,
-      n.country_code,
-      n.country_name_ru,
-      n.country_flag
-    FROM client_nodes cn
-    JOIN nodes n ON n.id = cn.node_id
-    WHERE cn.client_id = ?
-    ORDER BY n.id ASC
-  `).all(clientRow.id);
-
-  const lines = [];
-
-  for (const row of rows) {
-    try {
-      if (!includeOffline && row.last_status === 'offline') continue;
-
-      const inbound = await getInbound(row);
-      const stream = safeParseJsonField(inbound.streamSettings, {});
-
-      let subUrl = '';
-      if (inbound.protocol === 'vless' && stream.security === 'reality') {
-        const cleanCountryName = `${row.country_name_ru || row.name}`.trim();
-        const nodeLabel = `${getCountryFlag(cleanCountryName)} ${cleanCountryName}`.trim();
-        subUrl = buildVlessRealityLink(row, inbound, row.remote_uuid, clientRow.display_name, nodeLabel);
-      }
-
-      if (subUrl) {
-        lines.push(subUrl);
-        db.prepare(`
-          UPDATE client_nodes
-          SET remote_sub_url = ?
-          WHERE id = ?
-        `).run(subUrl, row.client_node_id);
-      } else if (row.remote_sub_url) {
-        lines.push(row.remote_sub_url);
-      }
-    } catch (err) {
-      if (includeOffline && row.remote_sub_url) {
-        lines.push(row.remote_sub_url);
-      }
-    }
-  }
-
-  return lines;
-}
-
 function buildVlessRealityLink(node, inbound, uuid, displayName, nodeName) {
   const streamSettings = safeParseJsonField(inbound.streamSettings, {});
   const settings = safeParseJsonField(inbound.settings, {});
@@ -445,8 +332,96 @@ function buildVlessRealityLink(node, inbound, uuid, displayName, nodeName) {
 
   if (flow) query.set('flow', flow);
 
-  const remark = encodeURIComponent(nodeName);
+  const remark = encodeURIComponent(`${displayName} | ${nodeName}`);
   return `vless://${uuid}@${host}:${port}?${query.toString()}#${remark}`;
+}
+
+async function buildSubscriptionLines(clientRow, includeOffline = true) {
+  const rows = db.prepare(`
+    SELECT
+      cn.id AS client_node_id,
+      cn.remote_sub_url,
+      cn.remote_uuid,
+      cn.remote_email,
+      n.id AS node_id,
+      n.name,
+      n.panel_url,
+      n.panel_path,
+      n.username,
+      n.password_enc,
+      n.inbound_id,
+      n.enabled,
+      n.last_status,
+      n.last_error
+    FROM client_nodes cn
+    JOIN nodes n ON n.id = cn.node_id
+    WHERE cn.client_id = ?
+    ORDER BY n.id ASC
+  `).all(clientRow.id);
+
+  const lines = [];
+
+  for (const row of rows) {
+    try {
+      if (!includeOffline && row.last_status === 'offline') continue;
+
+      const inbound = await getInbound(row);
+      const stream = safeParseJsonField(inbound.streamSettings, {});
+      let subUrl = '';
+
+      if (inbound.protocol === 'vless' && stream.security === 'reality') {
+        subUrl = buildVlessRealityLink(row, inbound, row.remote_uuid, clientRow.display_name, row.name);
+      }
+
+      if (subUrl) {
+        lines.push(subUrl);
+        db.prepare(`
+          UPDATE client_nodes
+          SET remote_sub_url = ?
+          WHERE id = ?
+        `).run(subUrl, row.client_node_id);
+      } else if (row.remote_sub_url) {
+        lines.push(row.remote_sub_url);
+      }
+    } catch (err) {
+      if (includeOffline && row.remote_sub_url) {
+        lines.push(row.remote_sub_url);
+      }
+    }
+  }
+
+  return lines;
+}
+
+async function importClientsFromNode(node) {
+  const inbound = await getInbound(node);
+  const settings = safeParseJsonField(inbound.settings, {});
+  const clients = settings.clients || [];
+
+  return clients.map(c => ({
+    uuid: c.id,
+    email: c.email,
+    limitIp: c.limitIp || 0,
+    expiryTime: c.expiryTime || 0,
+    flow: c.flow || '',
+    enable: c.enable !== false,
+    subId: c.subId || randomUUID().replace(/-/g, '').slice(0, 16)
+  }));
+}
+
+async function findRemoteClientConfig(node, clientUuid, clientEmail) {
+  const inbound = await getInbound(node);
+  const settings = safeParseJsonField(inbound.settings, {});
+  const clients = settings.clients || [];
+
+  const found =
+    clients.find(c => c.id === clientUuid) ||
+    clients.find(c => c.email === clientEmail);
+
+  return {
+    inbound,
+    clientConfig: found || null
+  };
 }
 
 app.get('/', requireAuth, (req, res) => res.redirect('/dashboard'));
@@ -480,39 +455,10 @@ app.get('/dashboard', requireAuth, (req, res) => {
   render(res, 'dashboard', { stats, nodes, clients, baseUrl: BASE_URL });
 });
 
-app.get('/settings', requireAuth, (req, res) => {
-  const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
-  render(res, 'settings', {
-    subscriptionName,
-    message: req.query.message || '',
-    error: req.query.error || ''
-  });
-});
-
-app.post('/settings', requireAuth, (req, res) => {
-  try {
-    const subscriptionName = String(req.body.subscription_name || '').trim();
-    if (!subscriptionName) throw new Error('Нужно указать название подписки');
-
-    db.prepare(`
-      INSERT INTO app_settings (key, value, updated_at)
-      VALUES (?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(key) DO UPDATE SET
-        value = excluded.value,
-        updated_at = CURRENT_TIMESTAMP
-    `).run('subscription_name', subscriptionName);
-
-    res.redirect('/settings?message=' + encodeURIComponent('Настройки сохранены'));
-  } catch (err) {
-    res.redirect('/settings?error=' + encodeURIComponent(String(err.message || err)));
-  }
-});
-
 app.get('/nodes', requireAuth, (req, res) => {
   const nodes = db.prepare('SELECT * FROM nodes ORDER BY id DESC').all();
   render(res, 'nodes', {
     nodes,
-    countries: COUNTRIES,
     message: req.query.message || '',
     error: req.query.error || ''
   });
@@ -520,34 +466,18 @@ app.get('/nodes', requireAuth, (req, res) => {
 
 app.post('/nodes', requireAuth, async (req, res) => {
   try {
-    const { panel_url, panel_path, username, password, inbound_id, country_code } = req.body;
-
-    const country = COUNTRIES.find(c => c.code === country_code);
-    if (!country) throw new Error('Страна не найдена');
+    const { name, panel_url, panel_path, username, password, inbound_id } = req.body;
 
     const info = db.prepare(`
-      INSERT INTO nodes (
-        name,
-        panel_url,
-        panel_path,
-        username,
-        password_enc,
-        inbound_id,
-        country_code,
-        country_name_ru,
-        country_flag
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO nodes (name, panel_url, panel_path, username, password_enc, inbound_id)
+      VALUES (?, ?, ?, ?, ?, ?)
     `).run(
-      country.name_ru,
+      name,
       panel_url,
       panel_path || '',
       username,
       encrypt(password, APP_SECRET),
-      Number(inbound_id),
-      country.code,
-      country.name_ru,
-      country.flag
+      Number(inbound_id)
     );
 
     const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(info.lastInsertRowid);
@@ -567,80 +497,6 @@ app.post('/nodes/:id/check', requireAuth, async (req, res) => {
   const msg = result.ok ? 'Узел онлайн' : `Узел офлайн: ${result.error}`;
 
   res.redirect('/nodes?message=' + encodeURIComponent(msg));
-});
-
-app.get('/nodes/:id/edit', requireAuth, (req, res) => {
-  const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(Number(req.params.id));
-  if (!node) {
-    return res.redirect('/nodes?error=' + encodeURIComponent('Узел не найден'));
-  }
-
-  render(res, 'node_edit', {
-    node,
-    countries: COUNTRIES,
-    message: req.query.message || '',
-    error: req.query.error || ''
-  });
-});
-
-app.post('/nodes/:id/edit', requireAuth, async (req, res) => {
-  try {
-    const nodeId = Number(req.params.id);
-    const existingNode = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId);
-    if (!existingNode) {
-      return res.redirect('/nodes?error=' + encodeURIComponent('Узел не найден'));
-    }
-
-    const {
-      panel_url,
-      panel_path,
-      username,
-      password,
-      inbound_id,
-      country_code
-    } = req.body;
-
-    const country = COUNTRIES.find(c => c.code === country_code);
-    if (!country) throw new Error('Страна не найдена');
-
-    const updatedName = country.name_ru;
-    const updatedPasswordEnc = String(password || '').trim()
-      ? encrypt(String(password).trim(), APP_SECRET)
-      : existingNode.password_enc;
-
-    db.prepare(`
-      UPDATE nodes
-      SET
-        name = ?,
-        panel_url = ?,
-        panel_path = ?,
-        username = ?,
-        password_enc = ?,
-        inbound_id = ?,
-        country_code = ?,
-        country_name_ru = ?,
-        country_flag = ?
-      WHERE id = ?
-    `).run(
-      updatedName,
-      String(panel_url || '').trim(),
-      String(panel_path || '').trim(),
-      String(username || '').trim(),
-      updatedPasswordEnc,
-      Number(inbound_id),
-      country.code,
-      country.name_ru,
-      country.flag,
-      nodeId
-    );
-
-    const updatedNode = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId);
-    await checkNode(updatedNode);
-
-    res.redirect('/nodes?message=' + encodeURIComponent('Узел обновлён'));
-  } catch (err) {
-    res.redirect('/nodes/' + req.params.id + '/edit?error=' + encodeURIComponent(String(err.message || err)));
-  }
 });
 
 app.post('/nodes/:id/delete', requireAuth, (req, res) => {
@@ -663,7 +519,7 @@ app.get('/clients', requireAuth, (req, res) => {
 
 app.post('/clients', requireAuth, async (req, res) => {
   try {
-    const { login, limit_ip, duration_days } = req.body;
+    const { login, display_name } = req.body;
     let nodeIds = req.body.node_ids || [];
 
     if (!Array.isArray(nodeIds)) nodeIds = [nodeIds];
@@ -671,13 +527,7 @@ app.post('/clients', requireAuth, async (req, res) => {
     if (!login || !String(login).trim()) throw new Error('Нужно указать логин');
 
     const cleanLogin = String(login).trim();
-    const cleanDisplayName = cleanLogin;
-    const cleanLimitIp = Math.max(1, Number(limit_ip || 1));
-    const cleanDurationDays = Math.max(0, Number(duration_days || 0));
-    const expiryTime = cleanDurationDays > 0
-      ? Date.now() + cleanDurationDays * 24 * 60 * 60 * 1000
-      : 0;
-
+    const cleanDisplayName = String(display_name || login).trim();
     const uuid = randomUUID();
     const subSlug = randomUUID().replace(/-/g, '');
 
@@ -707,9 +557,9 @@ app.post('/clients', requireAuth, async (req, res) => {
             id: uuid,
             email: clientEmail,
             flow: settings.clients?.[0]?.flow || '',
-            limitIp: cleanLimitIp,
+            limitIp: 0,
             totalGB: 0,
-            expiryTime: expiryTime,
+            expiryTime: 0,
             enable: true,
             tgId: '',
             subId,
@@ -722,9 +572,7 @@ app.post('/clients', requireAuth, async (req, res) => {
 
       let subUrl = '';
       if (inbound.protocol === 'vless' && stream.security === 'reality') {
-        const cleanCountryName = `${node.country_name_ru || node.name}`.trim();
-        const nodeLabel = `${getCountryFlag(cleanCountryName)} ${cleanCountryName}`.trim();
-        subUrl = buildVlessRealityLink(node, inbound, uuid, cleanDisplayName, nodeLabel);
+        subUrl = buildVlessRealityLink(node, inbound, uuid, cleanDisplayName, node.name);
       }
 
       db.prepare(`
@@ -734,6 +582,130 @@ app.post('/clients', requireAuth, async (req, res) => {
     }
 
     res.redirect('/clients?message=' + encodeURIComponent('Клиент создан на выбранных узлах'));
+  } catch (err) {
+    res.redirect('/clients?error=' + encodeURIComponent(String(err.message || err)));
+  }
+});
+
+app.post('/clients/import', requireAuth, async (req, res) => {
+  try {
+    const nodeId = Number(req.body.node_id);
+    const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId);
+    if (!node) throw new Error('Узел не найден');
+
+    const remoteClients = await importClientsFromNode(node);
+    let imported = 0;
+
+    for (const rc of remoteClients) {
+      const exists = db.prepare('SELECT id FROM clients WHERE uuid = ?').get(rc.uuid);
+      if (exists) continue;
+
+      const subSlug = randomUUID().replace(/-/g, '');
+      const displayName = rc.email;
+      const login = rc.email;
+
+      const clientInfo = db.prepare(`
+        INSERT INTO clients (login, display_name, uuid, sub_slug)
+        VALUES (?, ?, ?, ?)
+      `).run(login, displayName, rc.uuid, subSlug);
+
+      const inbound = await getInbound(node);
+      const stream = safeParseJsonField(inbound.streamSettings, {});
+      let subUrl = '';
+
+      if (inbound.protocol === 'vless' && stream.security === 'reality') {
+        subUrl = buildVlessRealityLink(node, inbound, rc.uuid, displayName, node.name);
+      }
+
+      db.prepare(`
+        INSERT INTO client_nodes (client_id, node_id, remote_email, remote_uuid, remote_sub_url)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(clientInfo.lastInsertRowid, node.id, rc.email, rc.uuid, subUrl);
+
+      imported++;
+    }
+
+    res.redirect('/clients?message=' + encodeURIComponent(`Импортировано клиентов: ${imported}`));
+  } catch (err) {
+    res.redirect('/clients?error=' + encodeURIComponent(String(err.message || err)));
+  }
+});
+
+app.post('/clients/:id/sync', requireAuth, async (req, res) => {
+  try {
+    const clientId = Number(req.params.id);
+    let nodeIds = req.body.node_ids || [];
+
+    if (!Array.isArray(nodeIds)) nodeIds = [nodeIds];
+    if (!nodeIds.length) throw new Error('Нужно выбрать хотя бы один узел');
+
+    const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+    if (!client) throw new Error('Клиент не найден');
+
+    const existingMappings = db.prepare(`
+      SELECT * FROM client_nodes WHERE client_id = ? ORDER BY id ASC
+    `).all(clientId);
+
+    if (!existingMappings.length) throw new Error('У клиента нет исходного узла');
+
+    const sourceMapping = existingMappings[0];
+    const sourceNode = db.prepare('SELECT * FROM nodes WHERE id = ?').get(sourceMapping.node_id);
+    if (!sourceNode) throw new Error('Исходный узел не найден');
+
+    const sourceData = await findRemoteClientConfig(sourceNode, sourceMapping.remote_uuid, sourceMapping.remote_email);
+    const sourceClient = sourceData.clientConfig || {};
+
+    for (const nodeIdRaw of nodeIds) {
+      const nodeId = Number(nodeIdRaw);
+
+      const alreadyExists = db.prepare(`
+        SELECT id FROM client_nodes WHERE client_id = ? AND node_id = ?
+      `).get(clientId, nodeId);
+
+      if (alreadyExists) continue;
+
+      const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId);
+      if (!node) continue;
+
+      const inbound = await getInbound(node);
+      const nodeSettings = safeParseJsonField(inbound.settings, {});
+      const stream = safeParseJsonField(inbound.streamSettings, {});
+
+      const clientEmail = sourceMapping.remote_email;
+      const subId = sourceClient.subId || randomUUID().replace(/-/g, '').slice(0, 16);
+
+      const payload = {
+        id: Number(node.inbound_id),
+        settings: JSON.stringify({
+          clients: [{
+            id: client.uuid,
+            email: clientEmail,
+            flow: sourceClient.flow || nodeSettings.clients?.[0]?.flow || '',
+            limitIp: sourceClient.limitIp || 0,
+            totalGB: 0,
+            expiryTime: sourceClient.expiryTime || 0,
+            enable: sourceClient.enable !== false,
+            tgId: sourceClient.tgId || '',
+            subId,
+            reset: sourceClient.reset || 0
+          }]
+        })
+      };
+
+      await addClient(node, payload);
+
+      let subUrl = '';
+      if (inbound.protocol === 'vless' && stream.security === 'reality') {
+        subUrl = buildVlessRealityLink(node, inbound, client.uuid, client.display_name, node.name);
+      }
+
+      db.prepare(`
+        INSERT INTO client_nodes (client_id, node_id, remote_email, remote_uuid, remote_sub_url)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(clientId, node.id, clientEmail, client.uuid, subUrl);
+    }
+
+    res.redirect(`/clients/${clientId}`);
   } catch (err) {
     res.redirect('/clients?error=' + encodeURIComponent(String(err.message || err)));
   }
@@ -752,12 +724,14 @@ app.get('/clients/:id', requireAuth, async (req, res) => {
   `).all(client.id);
 
   const lines = await buildSubscriptionLines(client, true);
+  const nodes = db.prepare('SELECT * FROM nodes WHERE enabled = 1 ORDER BY id ASC').all();
 
   render(res, 'client_detail', {
     client,
     mappings,
     subscription: lines.join('\n'),
-    baseUrl: BASE_URL
+    baseUrl: BASE_URL,
+    nodes
   });
 });
 
@@ -770,7 +744,9 @@ app.post('/clients/:id/delete', requireAuth, async (req, res) => {
   for (const map of mappings) {
     try {
       const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(map.node_id);
-      await deleteClient(node, map.remote_uuid, map.remote_email);
+      if (node) {
+        await deleteClient(node, map.remote_uuid, map.remote_email);
+      }
     } catch (err) {
       console.error('Delete remote client failed:', err.message);
     }
@@ -787,32 +763,11 @@ app.get('/sub/:slug', async (req, res) => {
   if (!client) return res.status(404).send('Subscription not found');
 
   const lines = await buildSubscriptionLines(client, true);
-  const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
-
-  const fileName = `${subscriptionName}.txt`;
-  const base64Title = Buffer.from(subscriptionName).toString('base64');
-
-  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`);
-  res.setHeader('Profile-Title', `base64:${base64Title}`);
-
-  res.send(lines.join('\n'));
+  res.type('text/plain').send(lines.join('\n'));
 });
 
 app.get('/healthz', async (req, res) => {
   res.json({ ok: true, service: '3xui-aggregator', now: new Date().toISOString() });
-});
-
-app.get('/debug/inbound/:nodeId', requireAuth, async (req, res) => {
-  try {
-    const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(Number(req.params.nodeId));
-    if (!node) return res.status(404).json({ error: 'node not found' });
-
-    const inbound = await getInbound(node);
-    res.json(inbound);
-  } catch (err) {
-    res.status(500).json({ error: String(err.message || err) });
-  }
 });
 
 app.listen(PORT, () => console.log(`3xui-aggregator started on :${PORT}`));

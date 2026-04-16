@@ -1,26 +1,84 @@
 <%- include('partials_header') %>
+
 <h1><%= client.display_name %></h1>
+
 <div class="card">
   <p><strong>Логин:</strong> <%= client.login %></p>
   <p><strong>UUID:</strong> <%= client.uuid %></p>
-  <p><strong>Общая подписка:</strong> <a href="<%= baseUrl %>/sub/<%= client.sub_slug %>" target="_blank"><%= baseUrl %>/sub/<%= client.sub_slug %></a></p>
+
+  <p>
+    <strong>Общая подписка:</strong><br>
+    <a href="<%= baseUrl %>/sub/<%= client.sub_slug %>" target="_blank">
+      <%= baseUrl %>/sub/<%= client.sub_slug %>
+    </a>
+  </p>
+
+  <div style="margin-top:10px;">
+    <button type="button" onclick="copySubscriptionLink()">Скопировать ссылку подписки</button>
+  </div>
 </div>
+
+<div class="card">
+  <h2>Добавить клиента на другие узлы</h2>
+
+  <form method="post" action="/clients/<%= client.id %>/sync">
+    <div class="checkbox-list">
+      <% (nodes || []).forEach(node => { %>
+        <label style="display:block; margin-bottom:6px;">
+          <input class="inline" type="checkbox" name="node_ids" value="<%= node.id %>">
+          <%= node.name %> (inbound <%= node.inbound_id %>)
+        </label>
+      <% }) %>
+    </div>
+
+    <button type="submit" style="width:auto; margin-top:8px;">Добавить на выбранные узлы</button>
+  </form>
+</div>
+
 <div class="card">
   <h2>Узлы клиента</h2>
+
   <table>
-    <tr><th>Узел</th><th>Статус</th><th>Email в 3x-ui</th><th>Ссылка</th></tr>
-    <% mappings.forEach(row => { %>
     <tr>
-      <td><%= row.node_name %></td>
-      <td><span class="badge <%= row.last_status %>"><%= row.last_status %></span></td>
-      <td><%= row.remote_email %></td>
-      <td><pre><%= row.remote_sub_url %></pre></td>
+      <th>Узел</th>
+      <th>Статус</th>
+      <th>Email в 3x-ui</th>
+      <th>Ссылка</th>
     </tr>
+
+    <% mappings.forEach(row => { %>
+      <tr>
+        <td><%= row.node_name %></td>
+        <td>
+          <span class="badge <%= row.last_status %>"><%= row.last_status %></span>
+        </td>
+        <td><%= row.remote_email %></td>
+        <td>
+          <% if (row.remote_sub_url) { %>
+            <pre style="white-space:pre-wrap; word-break:break-word;"><%= row.remote_sub_url %></pre>
+          <% } else { %>
+            <span>Нет ссылки</span>
+          <% } %>
+        </td>
+      </tr>
     <% }) %>
   </table>
 </div>
+
 <div class="card">
   <h2>Агрегированная подписка</h2>
-  <pre><%= subscription %></pre>
+  <pre style="white-space:pre-wrap; word-break:break-word;"><%= subscription %></pre>
 </div>
+
+<script>
+function copySubscriptionLink() {
+  const text = "<%= baseUrl %>/sub/<%= client.sub_slug %>";
+  navigator.clipboard.writeText(text).then(() => {
+    alert("Ссылка подписки скопирована");
+  }).catch(() => {
+    alert("Не удалось скопировать ссылку");
+  });
+}
+</script>
+
 <%- include('partials_footer') %>

@@ -20,7 +20,7 @@
       <tr><th>Имя</th><th>Статус</th></tr>
       <% nodes.forEach(node => { %>
       <tr>
-        <td><%= node.country_name_ru || node.name %></td>
+        <td><%= node.name %></td>
         <td><span class="badge <%= node.last_status %>"><%= node.last_status %></span></td>
       </tr>
       <% }) %>
@@ -33,13 +33,7 @@
       <% clients.forEach(client => { %>
       <tr>
         <td><a href="/clients/<%= client.id %>"><%= client.display_name %></a></td>
-        <td><button
-  type="button"
-  class="link-btn"
-  onclick="navigator.clipboard.writeText('<%= baseUrl %>/sub/<%= client.sub_slug %>')"
->
-  Скопировать
-</button></td>
+        <td><a href="<%= baseUrl %>/sub/<%= client.sub_slug %>" target="_blank">Открыть</a></td>
       </tr>
       <% }) %>
     </table>

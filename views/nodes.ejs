@@ -1,85 +1,51 @@
 <%- include('partials_header') %>
-
 <h1>Узлы</h1>
-
 <% if (message) { %><div class="alert ok"><%= message %></div><% } %>
 <% if (error) { %><div class="alert err"><%= error %></div><% } %>
-
 <div class="row">
   <div class="card">
     <h2>Добавить узел</h2>
     <form method="post" action="/nodes">
-      <label>Страна</label>
-      <select name="country_code" required>
-        <% (countries || []).forEach(function(country) { %>
-          <option value="<%= country.code %>"><%= country.name_ru %></option>
-        <% }) %>
-      </select>
-
+      <label>Имя узла</label>
+      <input name="name" placeholder="RU-MSK" required />
       <label>URL панели</label>
-      <input name="panel_url" placeholder="https://example.com:2053" required />
-
+      <input name="panel_url" placeholder="https://node1.example.com:2053" required />
       <label>Скрытый путь панели</label>
-      <input name="panel_path" placeholder="/SecretPath" />
-
+      <input name="panel_path" placeholder="/mySecretPath" />
       <label>Логин 3x-ui</label>
       <input name="username" required />
-
       <label>Пароль 3x-ui</label>
       <input name="password" type="password" required />
-
       <label>Inbound ID</label>
-      <input name="inbound_id" type="number" min="1" required />
-
+      <input name="inbound_id" type="number" required />
       <button type="submit">Добавить узел</button>
     </form>
   </div>
-
   <div class="card">
     <h2>Что сюда вносить</h2>
-    <p>Страна задаёт имя узла для клиента и подписки.</p>
-    <p>URL панели — корневой адрес панели без /panel.</p>
-    <p>Если в 3x-ui настроен web path, укажи его в поле «Скрытый путь панели».</p>
-    <p>Inbound ID — это inbound, в который будет добавляться клиент на этом узле.</p>
+    <p>URL панели — корневой адрес панели без <code>/panel</code>.</p>
+    <p>Если у тебя в 3x-ui настроен web path, укажи его в поле «Скрытый путь панели».</p>
+    <p>Inbound ID — именно тот inbound, куда нужно автоматически добавлять клиента на этом узле.</p>
   </div>
 </div>
-
 <div class="card">
   <h2>Список узлов</h2>
   <table>
-    <tr>
-      <th>ID</th>
-      <th>Имя</th>
-      <th>URL</th>
-      <th>Inbound</th>
-      <th>Статус</th>
-      <th>Ошибка</th>
-      <th>Действия</th>
-    </tr>
-    <% (nodes || []).forEach(function(node) { %>
+    <tr><th>ID</th><th>Имя</th><th>URL</th><th>Inbound</th><th>Статус</th><th>Ошибка</th><th>Действия</th></tr>
+    <% nodes.forEach(node => { %>
     <tr>
       <td><%= node.id %></td>
-      <td><%= node.country_name_ru || node.name %></td>
+      <td><%= node.name %></td>
       <td><%= node.panel_url %><%= node.panel_path || '' %></td>
       <td><%= node.inbound_id %></td>
-      <td><%= node.last_status %></td>
-      <td><%= node.last_error || '' %></td>
+      <td><span class="badge <%= node.last_status %>"><%= node.last_status %></span></td>
+      <td class="small"><%= node.last_error %></td>
       <td>
-        <a href="/nodes/<%= node.id %>/edit" style="display:inline-block; margin-right:8px;">
-          <button type="button" class="secondary" style="width:auto;">Редактировать</button>
-        </a>
-
-        <form method="post" action="/nodes/<%= node.id %>/check" style="display:inline-block;">
-          <button type="submit" style="width:auto;">Проверить</button>
-        </form>
-
-        <form method="post" action="/nodes/<%= node.id %>/delete" style="display:inline-block;" onsubmit="return confirm('Удалить узел?')">
-          <button class="danger" type="submit" style="width:auto;">Удалить</button>
-        </form>
+        <form method="post" action="/nodes/<%= node.id %>/check" style="display:inline-block"><button class="secondary" style="width:auto">Проверить</button></form>
+        <form method="post" action="/nodes/<%= node.id %>/delete" style="display:inline-block" onsubmit="return confirm('Удалить узел?')"><button class="danger" style="width:auto">Удалить</button></form>
       </td>
     </tr>
     <% }) %>
   </table>
 </div>
-
 <%- include('partials_footer') %>
