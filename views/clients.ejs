@@ -53,8 +53,21 @@
       <button type="submit">Импортировать клиентов</button>
     </form>
 
+    <form method="post" action="/clients/refresh-subscriptions" style="margin-top:12px;">
+      <label>Узел-источник для обновления подписок</label>
+      <select name="node_id" required>
+        <% nodes.forEach(node => { %>
+          <option value="<%= node.id %>">
+            <%= node.country_name_ru || node.name %> (inbound <%= node.inbound_id %>)
+          </option>
+        <% }) %>
+      </select>
+
+      <button type="submit">Обновить подписки</button>
+    </form>
+
     <p style="margin-top:12px;">
-      Импорт берёт клиентов из inbound выбранного узла и добавляет их в агрегатор.
+      Импорт добавляет новых клиентов из выбранного узла. Обновление подписок сверяет уже существующих клиентов с выбранным основным сервером, подтягивает исходные ссылки и добавляет недостающие узлы в подписку.
     </p>
   </div>
 </div>
@@ -94,7 +107,12 @@
           </button>
         </td>
         <td>
-          <form method="post" action="/clients/<%= client.id %>/delete" onsubmit="return confirm('Удалить клиента со всех узлов?')">
+          <form method="post" action="/clients/<%= client.id %>/delete" onsubmit="return confirm('Удалить клиента в выбранном режиме?')">
+            <select name="delete_mode" style="width:auto; margin-bottom:8px;">
+              <option value="all">Удалить везде</option>
+              <option value="secondary">Удалить с вторичных + из агрегатора</option>
+              <option value="local">Удалить только из агрегатора</option>
+            </select>
             <button class="danger" style="width:auto">Удалить</button>
           </form>
         </td>
