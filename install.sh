@@ -146,6 +146,7 @@ check_domain_ports_if_needed() {
   fi
 
   local bad=0
+
   if port_in_use 80; then
     err "Порт 80 уже занят. Для доменного режима через встроенный Caddy он должен быть свободен."
     bad=1
@@ -158,12 +159,12 @@ check_domain_ports_if_needed() {
 
   if [ "$bad" -eq 1 ]; then
     warn "На этом сервере уже заняты 80/443."
-    warn "Если там уже работает 3x-ui, nginx, caddy или другой reverse proxy,"
-    warn "то этим установщиком доменный режим на том же сервере не поднимется."
+    warn "Если это был старый стек агрегатора, он должен был быть уже остановлен."
+    warn "Если порты всё ещё заняты — их использует другой сервис, не сам агрегатор."
     warn "Варианты:"
     warn "1) установить агрегатор по IP"
     warn "2) вынести агрегатор на отдельный сервер"
-    warn "3) настраивать общий reverse proxy вручную"
+    warn "3) настроить общий reverse proxy вручную"
     exit 1
   fi
 }
@@ -648,12 +649,24 @@ prepare_config_and_run() {
   local server_ip
   server_ip="$(get_public_server_ip)"
 
+  local had_existing_stack="0"
+  if [ -f "$APP_DIR/docker-compose.yml" ]; then
+    had_existing_stack="1"
+  fi
+
+  # Если это обновление существующего агрегатора — сначала временно останавливаем его
+  if [ "$had_existing_stack" = "1" ]; then
+    info "Обнаружен существующий стек агрегатора. Временно останавливаю для обновления..."
+    cd "$APP_DIR"
+    docker compose down || true
+  fi
+
   check_domain_ports_if_needed
   build_urls "$server_ip"
 
   if [ "$PANEL_MODE" = "ip" ] && port_in_use "$APP_PORT"; then
-    if [ -f "$APP_DIR/docker-compose.yml" ]; then
-      info "Порт ${APP_PORT} может быть занят текущим контейнером. Продолжаю пересборку."
+    if [ "$had_existing_stack" = "1" ]; then
+      info "Порт ${APP_PORT} ранее использовался текущим агрегатором. Продолжаю обновление."
     else
       err "Порт ${APP_PORT} уже занят. Выбери другой порт."
       exit 1
@@ -670,7 +683,6 @@ prepare_config_and_run() {
 
 update_files_only() {
   say "Обновляю файлы проекта без изменения настроек..."
-  clone_or_update_repo "$REPO_URL_DEFAULT" "$BRANCH_DEFAULT"
   load_existing_config
 
   if [ -z "${ADMIN_PASS:-}" ]; then
@@ -678,6 +690,14 @@ update_files_only() {
     exit 1
   fi
 
+  if [ -f "$APP_DIR/docker-compose.yml" ]; then
+    info "Временно останавливаю текущий стек агрегатора..."
+    cd "$APP_DIR"
+    docker compose down || true
+  fi
+
+  clone_or_update_repo "$REPO_URL_DEFAULT" "$BRANCH_DEFAULT"
+  load_existing_config
   prepare_config_and_run
 }
 
