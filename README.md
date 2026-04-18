@@ -17,7 +17,9 @@
 
 ## Быстрая установка одной командой
 
+```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/dagmagnat/3xui-Aggregator/main/install.sh)
+```
 
 Установщик на русском языке:
 
@@ -64,10 +66,15 @@ bash <(curl -fsSL https://raw.githubusercontent.com/dagmagnat/3xui-Aggregator/ma
 
 ## Ручной запуск без установщика
 
+```bash
 cp .env.example .env
 nano .env
 docker compose up -d --build
+```
 
 ## Удаление
 
+```bash
 bash /opt/3xui-aggregator/uninstall.sh
+```
+
