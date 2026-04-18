@@ -358,7 +358,7 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
     FROM client_nodes cn
     JOIN nodes n ON n.id = cn.node_id
     WHERE cn.client_id = ?
-    ORDER BY n.id ASC
+    ORDER BY cn.id ASC
   `).all(clientRow.id);
 
   const lines = [];
@@ -367,25 +367,42 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
     try {
       if (!includeOffline && row.last_status === 'offline') continue;
 
+      // 🔥 ГЛАВНОЕ ИЗМЕНЕНИЕ
+      // если есть оригинальная ссылка → используем её
+      if (row.remote_sub_url && row.remote_sub_url.startsWith('http')) {
+        lines.push(row.remote_sub_url);
+        continue;
+      }
+
       const inbound = await getInbound(row);
       const stream = safeParseJsonField(inbound.streamSettings, {});
 
       let subUrl = '';
+
       if (inbound.protocol === 'vless' && stream.security === 'reality') {
         const cleanCountryName = `${row.country_name_ru || row.name}`.trim();
         const nodeLabel = `${getCountryFlag(cleanCountryName)} ${cleanCountryName}`.trim();
-        subUrl = buildVlessRealityLink(row, inbound, row.remote_uuid, clientRow.display_name, nodeLabel);
+
+        subUrl = buildVlessRealityLink(
+          row,
+          inbound,
+          row.remote_uuid,
+          clientRow.display_name,
+          nodeLabel
+        );
       }
 
       if (subUrl) {
         lines.push(subUrl);
-        db.prepare(`
-          UPDATE client_nodes
-          SET remote_sub_url = ?
-          WHERE id = ?
-        `).run(subUrl, row.client_node_id);
-      } else if (row.remote_sub_url) {
-        lines.push(row.remote_sub_url);
+
+        // обновляем только если не было
+        if (!row.remote_sub_url) {
+          db.prepare(`
+            UPDATE client_nodes
+            SET remote_sub_url = ?
+            WHERE id = ?
+          `).run(subUrl, row.client_node_id);
+        }
       }
     } catch (err) {
       if (includeOffline && row.remote_sub_url) {
@@ -454,17 +471,27 @@ async function importClientsFromNode(node) {
   const settings = safeParseJsonField(inbound.settings, {});
   const clients = settings.clients || [];
 
-  return clients.map(c => ({
-    uuid: c.id,
-    email: c.email,
-    limitIp: c.limitIp || 1,
-    expiryTime: c.expiryTime || 0,
-    flow: c.flow || '',
-    enable: c.enable !== false,
-    subId: c.subId || randomUUID().replace(/-/g, '').slice(0, 16),
-    tgId: c.tgId || '',
-    reset: c.reset || 0
-  }));
+  return clients.map(c => {
+    // 🔥 Пытаемся вытащить оригинальный sub URL
+    let originalSub = '';
+
+    if (c.subId) {
+      originalSub = `${node.panel_url}/sub/${c.subId}`;
+    }
+
+    return {
+      uuid: c.id,
+      email: c.email,
+      limitIp: c.limitIp || 1,
+      expiryTime: c.expiryTime || 0,
+      flow: c.flow || '',
+      enable: c.enable !== false,
+      subId: c.subId || randomUUID().replace(/-/g, '').slice(0, 16),
+      tgId: c.tgId || '',
+      reset: c.reset || 0,
+      originalSub
+    };
+  });
 }
 
 async function getClientConfigFromNode(node, clientUuid, clientEmail) {
@@ -750,11 +777,10 @@ app.post('/clients', requireAuth, async (req, res) => {
 
       await addClient(node, clientPayload);
 
-      let subUrl = '';
+      let subUrl = rc.originalSub || '';
       if (inbound.protocol === 'vless' && stream.security === 'reality') {
         const cleanCountryName = `${node.country_name_ru || node.name}`.trim();
         const nodeLabel = `${getCountryFlag(cleanCountryName)} ${cleanCountryName}`.trim();
-        subUrl = buildVlessRealityLink(node, inbound, uuid, cleanDisplayName, nodeLabel);
       }
 
       db.prepare(`
