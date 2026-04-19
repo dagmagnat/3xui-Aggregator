@@ -55,8 +55,8 @@ ask_secret_optional() {
 trim() {
   local var="$1"
   var="${var//$'\r'/}"
-  var="${var#"${var%%[![:space:]]*}"}"
-  var="${var%"${var##*[![:space:]]}"}"
+  var="${var#\"${var%%[![:space:]]*}\"}"
+  var="${var%\"${var##*[![:space:]]}\"}"
   echo "$var"
 }
 
@@ -81,6 +81,43 @@ validate_email() {
 port_in_use() {
   local port="$1"
   ss -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "(^|:)${port}$"
+}
+
+check_domain_ports_if_needed() {
+  local need_80_443="0"
+
+  if [ "${PANEL_MODE}" = "domain" ] || [ "${SUB_MODE}" = "domain" ]; then
+    need_80_443="1"
+  fi
+
+  if [ "$need_80_443" != "1" ]; then
+    return
+  fi
+
+  local bad=0
+
+  if port_in_use 80; then
+    err "Порт 80 уже занят. Для доменного режима через встроенный Caddy он должен быть свободен."
+    bad=1
+  fi
+
+  if port_in_use 443; then
+    err "Порт 443 уже занят. Для доменного режима через встроенный Caddy он должен быть свободен."
+    bad=1
+  fi
+
+  if [ "$bad" -eq 1 ]; then
+    warn "На этом сервере уже заняты 80/443."
+    warn "Если это был старый стек агрегатора, он должен был быть уже остановлен."
+    warn "Если порты всё ещё заняты — их использует другой сервис, не сам агрегатор."
+    warn "Кто держит порты:"
+    ss -ltnp 2>/dev/null | grep -E '(:80 |:443 )' || true
+    warn "Варианты:"
+    warn "1) установить агрегатор по IP"
+    warn "2) вынести агрегатор на отдельный сервер"
+    warn "3) настроить общий reverse proxy вручную"
+    exit 1
+  fi
 }
 
 ensure_dir() {
@@ -343,13 +380,6 @@ start_stack() {
   say "Собираю и запускаю контейнеры..."
   cd "$APP_DIR"
   docker compose up -d --build
-}
-
-stop_stack_if_exists() {
-  if [ -f "$APP_DIR/docker-compose.yml" ]; then
-    cd "$APP_DIR"
-    docker compose down || true
-  fi
 }
 
 stop_existing_aggregator_stack() {
@@ -707,7 +737,6 @@ prepare_config_and_run() {
   fi
 
   sleep 2
-
   check_domain_ports_if_needed
   build_urls "$server_ip"
 
