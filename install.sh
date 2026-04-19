@@ -55,8 +55,8 @@ ask_secret_optional() {
 trim() {
   local var="$1"
   var="${var//$'\r'/}"
-  var="${var#"\${var%%[![:space:]]*}"}"
-  var="${var%"\${var##*[![:space:]]}"}"
+  var="${var#"${var%%[![:space:]]*}"}"
+  var="${var%"${var##*[![:space:]]}"}"
   echo "$var"
 }
 
@@ -184,7 +184,9 @@ validate_domain() {
 
 validate_email() {
   local email="$1"
-  if ! printf '%s' "$email" | grep -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'; then
+  email="$(trim "$email")"
+
+  if [[ ! "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
     err "Email введён некорректно."
     exit 1
   fi
