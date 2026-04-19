@@ -231,10 +231,10 @@ clone_or_update_repo() {
   local branch="$2"
 
   if [ -d "$APP_DIR/.git" ]; then
-    warn "Каталог $APP_DIR уже существует. Обновляю проект..."
+    warn "Каталог $APP_DIR уже существует. Принудительно обновляю проект..."
     git -C "$APP_DIR" fetch --all
     git -C "$APP_DIR" checkout "$branch"
-    git -C "$APP_DIR" pull --ff-only origin "$branch"
+    git -C "$APP_DIR" reset --hard "origin/$branch"
   else
     say "Клонирую проект в $APP_DIR ..."
     rm -rf "$APP_DIR"
