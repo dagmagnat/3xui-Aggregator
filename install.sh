@@ -184,9 +184,12 @@ validate_domain() {
 
 validate_email() {
   local email="$1"
-  email="$(printf '%s' "$email" | tr -d '\r' | xargs)"
 
-  if ! printf '%s' "$email" | grep -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'; then
+  # убираем \r если есть
+  email="${email//$'\r'/}"
+
+  # простая проверка
+  if [[ ! "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
     err "Email введён некорректно."
     exit 1
   fi
@@ -677,7 +680,7 @@ first_install_wizard() {
       PANEL_DOMAIN="$(trim "$PANEL_DOMAIN")"
       validate_domain "$PANEL_DOMAIN"
 
-      PANEL_EMAIL="$(ask 'Email для SSL (Let'''s Encrypt / Caddy)' '')"
+      PANEL_EMAIL="$(ask "Email для SSL (LE / Caddy)" '')"
       PANEL_EMAIL="$(trim "$PANEL_EMAIL")"
       validate_email "$PANEL_EMAIL"
       ;;
@@ -708,7 +711,7 @@ first_install_wizard() {
       validate_domain "$SUB_DOMAIN"
 
       if [ -z "${PANEL_EMAIL:-}" ]; then
-        PANEL_EMAIL="$(ask 'Email для SSL (Let'''s Encrypt / Caddy)' '')"
+        PANEL_EMAIL="$(ask "Email для SSL (LE / Caddy)" '')"
         PANEL_EMAIL="$(trim "$PANEL_EMAIL")"
         validate_email "$PANEL_EMAIL"
       fi
