@@ -13,6 +13,8 @@ NC='\033[0m'
 
 ENV_FILE="$APP_DIR/.env"
 INSTALL_CONF="$APP_DIR/.install.conf"
+BACKUP_DIR="/opt/3xui-backups"
+SHORTCUT_BIN="/usr/local/bin/agg"
 
 say() { echo -e "${GREEN}$*${NC}"; }
 warn() { echo -e "${YELLOW}$*${NC}"; }
@@ -53,8 +55,8 @@ ask_secret_optional() {
 trim() {
   local var="$1"
   var="${var//$'\r'/}"
-  var="${var#"${var%%[![:space:]]*}"}"
-  var="${var%"${var##*[![:space:]]}"}"
+  var="${var#"\${var%%[![:space:]]*}"}"
+  var="${var%"\${var##*[![:space:]]}"}"
   echo "$var"
 }
 
@@ -66,6 +68,7 @@ port_in_use() {
 ensure_dir() {
   mkdir -p "$APP_DIR"
   mkdir -p "$APP_DIR/data"
+  mkdir -p "$BACKUP_DIR"
 }
 
 load_existing_config() {
@@ -161,6 +164,8 @@ check_domain_ports_if_needed() {
     warn "На этом сервере уже заняты 80/443."
     warn "Если это был старый стек агрегатора, он должен был быть уже остановлен."
     warn "Если порты всё ещё заняты — их использует другой сервис, не сам агрегатор."
+    warn "Кто держит порты:"
+    ss -ltnp 2>/dev/null | grep -E '(:80 |:443 )' || true
     warn "Варианты:"
     warn "1) установить агрегатор по IP"
     warn "2) вынести агрегатор на отдельный сервер"
@@ -403,6 +408,76 @@ stop_existing_aggregator_stack() {
   docker rm -f 3xui-aggregator >/dev/null 2>&1 || true
 }
 
+install_shortcut_command() {
+  cat > "$SHORTCUT_BIN" <<EOF
+#!/usr/bin/env bash
+exec bash "$APP_DIR/install.sh" "\$@"
+EOF
+  chmod +x "$SHORTCUT_BIN"
+}
+
+create_backup() {
+  say "Создаю резервную копию..."
+
+  mkdir -p "$BACKUP_DIR"
+
+  local stamp archive_name archive_path
+  stamp="$(date +%F-%H%M%S)"
+  archive_name="3xui-aggregator-backup-${stamp}.tar.gz"
+  archive_path="$BACKUP_DIR/$archive_name"
+
+  stop_existing_aggregator_stack
+
+  tar -czf "$archive_path" -C /opt 3xui-aggregator
+
+  say "Резервная копия создана:"
+  say "$archive_path"
+
+  if [ -d "$APP_DIR" ]; then
+    cd "$APP_DIR"
+    docker compose up -d --build || true
+  fi
+}
+
+restore_from_backup() {
+  say "Восстановление из резервной копии"
+
+  mkdir -p "$BACKUP_DIR"
+
+  local latest_backup=""
+  latest_backup="$(ls -1t "$BACKUP_DIR"/3xui-aggregator-backup-*.tar.gz 2>/dev/null | head -n 1 || true)"
+
+  local archive_path
+  archive_path="$(ask 'Путь к архиву резервной копии' "${latest_backup:-/opt/3xui-backups/backup.tar.gz}")"
+  archive_path="$(trim "$archive_path")"
+
+  if [ ! -f "$archive_path" ]; then
+    err "Архив не найден: $archive_path"
+    exit 1
+  fi
+
+  stop_existing_aggregator_stack
+
+  rm -rf "$APP_DIR"
+  mkdir -p /opt
+
+  say "Распаковываю резервную копию..."
+  tar -xzf "$archive_path" -C /opt
+
+  if [ ! -d "$APP_DIR" ]; then
+    err "После распаковки каталог $APP_DIR не найден."
+    exit 1
+  fi
+
+  install_docker_if_needed
+  install_shortcut_command
+
+  cd "$APP_DIR"
+  docker compose up -d --build
+
+  say "Восстановление завершено."
+}
+
 get_public_server_ip() {
   local server_ip
   server_ip="$(curl -4 -fsSL https://api.ipify.org || echo "127.0.0.1")"
@@ -456,7 +531,7 @@ prompt_panel_mode() {
       PANEL_DOMAIN="$(trim "$PANEL_DOMAIN")"
       validate_domain "$PANEL_DOMAIN"
 
-      PANEL_EMAIL="$(ask 'Email для SSL (Let'\''s Encrypt / Caddy)' "${PANEL_EMAIL:-}")"
+      PANEL_EMAIL="$(ask 'Email для SSL (Let'''s Encrypt / Caddy)' "${PANEL_EMAIL:-}")"
       PANEL_EMAIL="$(trim "$PANEL_EMAIL")"
       validate_email "$PANEL_EMAIL"
       ;;
@@ -495,7 +570,7 @@ prompt_sub_mode() {
       validate_domain "$SUB_DOMAIN"
 
       if [ -z "${PANEL_EMAIL:-}" ]; then
-        PANEL_EMAIL="$(ask 'Email для SSL (Let'\''s Encrypt / Caddy)' "${PANEL_EMAIL:-}")"
+        PANEL_EMAIL="$(ask 'Email для SSL (Let'''s Encrypt / Caddy)' "${PANEL_EMAIL:-}")"
         PANEL_EMAIL="$(trim "$PANEL_EMAIL")"
         validate_email "$PANEL_EMAIL"
       fi
@@ -600,7 +675,7 @@ first_install_wizard() {
       PANEL_DOMAIN="$(trim "$PANEL_DOMAIN")"
       validate_domain "$PANEL_DOMAIN"
 
-      PANEL_EMAIL="$(ask 'Email для SSL (Let'\''s Encrypt / Caddy)' '')"
+      PANEL_EMAIL="$(ask 'Email для SSL (Let'''s Encrypt / Caddy)' '')"
       PANEL_EMAIL="$(trim "$PANEL_EMAIL")"
       validate_email "$PANEL_EMAIL"
       ;;
@@ -631,7 +706,7 @@ first_install_wizard() {
       validate_domain "$SUB_DOMAIN"
 
       if [ -z "${PANEL_EMAIL:-}" ]; then
-        PANEL_EMAIL="$(ask 'Email для SSL (Let'\''s Encrypt / Caddy)' '')"
+        PANEL_EMAIL="$(ask 'Email для SSL (Let'''s Encrypt / Caddy)' '')"
         PANEL_EMAIL="$(trim "$PANEL_EMAIL")"
         validate_email "$PANEL_EMAIL"
       fi
@@ -696,6 +771,7 @@ prepare_config_and_run() {
   write_runtime_files
   write_dockerfile_patch_note
   start_stack
+  install_shortcut_command
 }
 
 update_files_only() {
@@ -708,7 +784,6 @@ update_files_only() {
   fi
 
   stop_existing_aggregator_stack
-
   clone_or_update_repo "$REPO_URL_DEFAULT" "$BRANCH_DEFAULT"
   load_existing_config
   prepare_config_and_run
@@ -750,6 +825,14 @@ reinstall_full() {
   prepare_config_and_run
 }
 
+fresh_install_flow() {
+  clone_or_update_repo "$REPO_URL_DEFAULT" "$BRANCH_DEFAULT"
+  load_existing_config
+  first_install_wizard
+  prepare_config_and_run
+  install_shortcut_command
+}
+
 print_result() {
   echo
   say "=============================================="
@@ -765,16 +848,19 @@ print_result() {
   if [ "$PANEL_MODE" = "domain" ] || [ "$SUB_MODE" = "domain" ]; then
     warn "Для доменного режима порты 80 и 443 должны быть свободны."
   fi
+  warn "Быстрый запуск меню: agg"
 }
 
 main_menu() {
   echo >&2
   say "Обнаружена существующая установка." >&2
-  say "1 - Просто обновить файлы и контейнеры" >&2
-  say "2 - Изменить настройки и обновить" >&2
-  say "3 - Переустановить полностью" >&2
+  say "1 - Новая установка" >&2
+  say "2 - Обновить" >&2
+  say "3 - Переустановить" >&2
+  say "4 - Создать резервную копию" >&2
+  say "5 - Восстановить из резервной копии" >&2
   say "0 - Выход" >&2
-  ask 'Выбери действие' '1'
+  ask 'Выбери действие' '2'
 }
 
 main() {
@@ -782,7 +868,7 @@ main() {
   say "=============================================="
   say "Установка / обновление 3xui-Aggregator"
   say "=============================================="
-  say "Скрипт умеет: установка, обновление, изменение настроек."
+  say "Скрипт умеет: установка, обновление, изменение настроек, резервное копирование и восстановление."
   echo
 
   require_root
@@ -798,13 +884,19 @@ main() {
 
     case "$action" in
       1)
-        update_files_only
+        fresh_install_flow
         ;;
       2)
-        change_settings_and_update
+        update_files_only
         ;;
       3)
         reinstall_full
+        ;;
+      4)
+        create_backup
+        ;;
+      5)
+        restore_from_backup
         ;;
       0)
         say "Выход."
@@ -816,10 +908,7 @@ main() {
         ;;
     esac
   else
-    clone_or_update_repo "$REPO_URL_DEFAULT" "$BRANCH_DEFAULT"
-    load_existing_config
-    first_install_wizard
-    prepare_config_and_run
+    fresh_install_flow
   fi
 
   print_result
