@@ -1,132 +1,228 @@
-<%- include('partials_header') %>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Клиенты — 3xui-Aggregator</title>
+  <style>
+    :root {
+      --bg: #08111f;
+      --card: #0d1a2d;
+      --card-2: #0f2038;
+      --line: rgba(255,255,255,.08);
+      --text: #eef4ff;
+      --muted: #9fb3d9;
+      --blue: #2f7cff;
+      --blue-2: #1f6fff;
+      --green: #18c37e;
+      --red: #ff5d73;
+      --orange: #ffb02e;
+      --radius: 18px;
+    }
 
-<h1>Клиенты</h1>
+    * { box-sizing: border-box; }
 
-<% if (message) { %>
-  <div class="alert ok"><%= message %></div>
-<% } %>
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(53, 106, 255, 0.18), transparent 25%),
+        linear-gradient(180deg, #07101d, #091425 60%, #091322);
+      color: var(--text);
+    }
 
-<% if (error) { %>
-  <div class="alert err"><%= error %></div>
-<% } %>
+    .layout {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      min-height: 100vh;
+    }
 
-<div class="row">
-  <div class="card">
-    <h2>Создать клиента</h2>
-    <form method="post" action="/clients">
-      <label>Логин</label>
-      <input name="login" placeholder="user001" required />
+    .sidebar {
+      border-right: 1px solid var(--line);
+      background: rgba(5, 11, 22, 0.72);
+      backdrop-filter: blur(10px);
+      padding: 24px 18px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
 
-      <label>Срок в днях</label>
-      <input name="duration_days" type="number" min="0" value="0" />
-      <small>0 = без даты окончания</small>
+    .brand {
+      font-size: 22px;
+      font-weight: 800;
+      margin-bottom: 28px;
+      letter-spacing: .3px;
+    }
 
-      <label>Лимит IP</label>
-      <input name="limit_ip" type="number" min="1" value="1" required />
+    .brand span {
+      color: #75a7ff;
+    }
 
-      <label>На каких узлах создать</label>
-      <div class="checkbox-list">
-        <% nodes.forEach(node => { %>
-          <label>
-            <input class="inline" type="checkbox" name="node_ids" value="<%= node.id %>" />
-            <%= node.country_name_ru || node.name %> (inbound <%= node.inbound_id %>)
-          </label>
-        <% }) %>
-      </div>
+    .nav {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
 
-      <button type="submit">Создать клиента на узлах</button>
-    </form>
-  </div>
+    .nav a,
+    .nav button {
+      width: 100%;
+      text-align: left;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 15px;
+      cursor: pointer;
+      transition: .2s ease;
+    }
 
-  <div class="card">
-    <h2>Импорт клиентов из существующей панели</h2>
-    <form method="post" action="/clients/import">
-      <label>Узел-источник</label>
-      <select name="node_id" required>
-        <% nodes.forEach(node => { %>
-          <option value="<%= node.id %>">
-            <%= node.country_name_ru || node.name %> (inbound <%= node.inbound_id %>)
-          </option>
-        <% }) %>
-      </select>
+    .nav a:hover,
+    .nav button:hover {
+      background: rgba(255,255,255,.04);
+      border-color: var(--line);
+    }
 
-      <button type="submit">Импортировать клиентов</button>
-    </form>
+    .nav a.active {
+      background: rgba(47, 124, 255, 0.18);
+      border-color: rgba(47,124,255,.35);
+    }
 
-    <form method="post" action="/clients/refresh-subscriptions" style="margin-top:12px;">
-      <label>Узел-источник для обновления подписок</label>
-      <select name="node_id" required>
-        <% nodes.forEach(node => { %>
-          <option value="<%= node.id %>">
-            <%= node.country_name_ru || node.name %> (inbound <%= node.inbound_id %>)
-          </option>
-        <% }) %>
-      </select>
+    .main {
+      padding: 28px;
+    }
 
-      <button type="submit">Обновить подписки</button>
-    </form>
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
 
-    <p style="margin-top:12px;">
-      Импорт добавляет новых клиентов из выбранного узла. Обновление подписок сверяет уже существующих клиентов с выбранным основным сервером, подтягивает исходные ссылки и добавляет недостающие узлы в подписку.
-    </p>
-  </div>
-</div>
+    .title {
+      font-size: 30px;
+      font-weight: 800;
+      margin: 0;
+    }
 
-<div class="card">
-  <h2>Как выдаётся подписка</h2>
-  <p>После создания или импорта для клиента генерируется один общий URL подписки.</p>
-  <p>Внутри него несколько ссылок конфигураций — по одной на каждый узел.</p>
-  <p>Ссылка остаётся постоянной: ты можешь пересылать её клиенту заново в любой момент.</p>
-</div>
+    .subtitle {
+      color: var(--muted);
+      margin-top: 6px;
+      font-size: 14px;
+    }
 
-<div class="card">
-  <h2>Все клиенты</h2>
-  <table>
-    <tr>
-      <th>ID</th>
-      <th>Имя</th>
-      <th>Логин</th>
-      <th>Подписка</th>
-      <th>Действия</th>
-    </tr>
+    .logout-form {
+      margin: 0;
+    }
 
-    <% clients.forEach(client => { %>
-      <tr>
-        <td><%= client.id %></td>
-        <td>
-          <a href="/clients/<%= client.id %>"><%= client.display_name %></a>
-        </td>
-        <td><%= client.login %></td>
-        <td>
-          <button
-            type="button"
-            class="link-btn"
-            onclick="copySubLink('<%= baseUrl %>/sub/<%= client.sub_slug %>')"
-          >
-            Скопировать
-          </button>
-        </td>
-        <td>
-          <form method="post" action="/clients/<%= client.id %>/delete" onsubmit="return confirm('Удалить клиента в выбранном режиме?')">
-            <select name="delete_mode" style="width:auto; margin-bottom:8px;">
-              <option value="all">Удалить везде</option>
-              <option value="secondary">Удалить с вторичных + из агрегатора</option>
-              <option value="local">Удалить только из агрегатора</option>
-            </select>
-            <button class="danger" style="width:auto">Удалить</button>
-          </form>
-        </td>
-      </tr>
-    <% }) %>
-  </table>
-</div>
+    .btn {
+      appearance: none;
+      border: none;
+      background: var(--blue);
+      color: #fff;
+      padding: 12px 16px;
+      border-radius: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: .2s ease;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
 
-<script>
-function copySubLink(text) {
-  navigator.clipboard.writeText(text)
-    .then(() => alert('Ссылка подписки скопирована'))
-    .catch(() => alert('Не удалось скопировать ссылку'));
-}
-</script>
+    .btn:hover {
+      background: var(--blue-2);
+      transform: translateY(-1px);
+    }
 
-<%- include('partials_footer') %>
+    .btn.secondary {
+      background: rgba(255,255,255,.05);
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+
+    .btn.secondary:hover {
+      background: rgba(255,255,255,.08);
+    }
+
+    .btn.red {
+      background: var(--red);
+    }
+
+    .btn.red:hover {
+      filter: brightness(.96);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 18px;
+    }
+
+    .card {
+      grid-column: span 12;
+      background: linear-gradient(180deg, rgba(13,26,45,.96), rgba(10,21,36,.98));
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: 0 20px 50px rgba(0,0,0,.25);
+      padding: 22px;
+    }
+
+    .card h2 {
+      margin: 0 0 14px;
+      font-size: 20px;
+    }
+
+    .card p.note {
+      margin: 12px 0 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 14px;
+    }
+
+    .field {
+      grid-column: span 12;
+    }
+
+    .field.half {
+      grid-column: span 6;
+    }
+
+    .field.third {
+      grid-column: span 4;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      color: #dce8ff;
+      font-weight: 600;
+    }
+
+    input,
+    select {
+      width: 100%;
+      padding: 13px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: #09172c;
+      color: var(--text);
+      outline: none;
+      font-size: 15px;
+    }
+
+    input:focus,
+    select:focus {
+      border-color: rgba(84, 142, 255, .8);
+      box-shadow: 0 0 0
