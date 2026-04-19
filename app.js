@@ -84,6 +84,7 @@ function initDb() {
       name TEXT NOT NULL,
       panel_url TEXT NOT NULL,
       panel_path TEXT DEFAULT '',
+      sub_base_url TEXT DEFAULT '',
       username TEXT NOT NULL,
       password_enc TEXT NOT NULL,
       inbound_id INTEGER NOT NULL,
@@ -121,6 +122,7 @@ function initDb() {
   try { db.prepare(`ALTER TABLE nodes ADD COLUMN country_code TEXT DEFAULT ''`).run(); } catch (_) {}
   try { db.prepare(`ALTER TABLE nodes ADD COLUMN country_name_ru TEXT DEFAULT ''`).run(); } catch (_) {}
   try { db.prepare(`ALTER TABLE nodes ADD COLUMN country_flag TEXT DEFAULT ''`).run(); } catch (_) {}
+  try { db.prepare(`ALTER TABLE nodes ADD COLUMN sub_base_url TEXT DEFAULT ''`).run(); } catch (_) {}
 
   const existingAdmin = db.prepare('SELECT id FROM app_users WHERE username = ?').get(ADMIN_USERNAME);
   if (!existingAdmin) {
@@ -158,6 +160,13 @@ function normalizeRootUrl(panelUrl, panelPath) {
   let path = (panelPath || '').trim();
   if (path && !path.startsWith('/')) path = `/${path}`;
   return `${url}${path}`.replace(/\/$/, '');
+}
+
+function normalizeSubscriptionBaseUrl(node) {
+  const explicit = String(node?.sub_base_url || '').trim();
+  if (explicit) return explicit.replace(/\/$/, '');
+
+  return normalizeRootUrl(node?.panel_url || '', node?.panel_path || '');
 }
 
 async function safeJson(response) {
@@ -476,7 +485,7 @@ async function importClientsFromNode(node) {
     let originalSub = '';
 
     if (c.subId) {
-      originalSub = `${node.panel_url}/sub/${c.subId}`;
+      originalSub = `${normalizeSubscriptionBaseUrl(node)}/sub/${c.subId}`;
     }
 
     return {
@@ -577,7 +586,7 @@ app.get('/nodes', requireAuth, (req, res) => {
 
 app.post('/nodes', requireAuth, async (req, res) => {
   try {
-    const { panel_url, panel_path, username, password, inbound_id, country_code } = req.body;
+    const { panel_url, panel_path, sub_base_url, username, password, inbound_id, country_code } = req.body;
 
     const country = COUNTRIES.find(c => c.code === country_code);
     if (!country) throw new Error('Страна не найдена');
@@ -587,6 +596,7 @@ app.post('/nodes', requireAuth, async (req, res) => {
         name,
         panel_url,
         panel_path,
+        sub_base_url,
         username,
         password_enc,
         inbound_id,
@@ -594,11 +604,12 @@ app.post('/nodes', requireAuth, async (req, res) => {
         country_name_ru,
         country_flag
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       country.name_ru,
       panel_url,
       panel_path || '',
+      String(sub_base_url || '').trim(),
       username,
       encrypt(password, APP_SECRET),
       Number(inbound_id),
@@ -654,7 +665,8 @@ app.post('/nodes/:id/edit', requireAuth, async (req, res) => {
       username,
       password,
       inbound_id,
-      country_code
+      country_code,
+      sub_base_url
     } = req.body;
 
     const country = COUNTRIES.find(c => c.code === country_code);
@@ -672,6 +684,7 @@ app.post('/nodes/:id/edit', requireAuth, async (req, res) => {
         panel_url = ?,
         panel_path = ?,
         username = ?,
+        sub_base_url = ?,
         password_enc = ?,
         inbound_id = ?,
         country_code = ?,
@@ -683,6 +696,7 @@ app.post('/nodes/:id/edit', requireAuth, async (req, res) => {
       String(panel_url || '').trim(),
       String(panel_path || '').trim(),
       String(username || '').trim(),
+      String(sub_base_url || '').trim(),
       updatedPasswordEnc,
       Number(inbound_id),
       country.code,
@@ -777,10 +791,11 @@ app.post('/clients', requireAuth, async (req, res) => {
 
       await addClient(node, clientPayload);
 
-      let subUrl = rc.originalSub || '';
+      let subUrl = '';
       if (inbound.protocol === 'vless' && stream.security === 'reality') {
         const cleanCountryName = `${node.country_name_ru || node.name}`.trim();
         const nodeLabel = `${getCountryFlag(cleanCountryName)} ${cleanCountryName}`.trim();
+        subUrl = buildVlessRealityLink(node, inbound, uuid, cleanDisplayName, nodeLabel);
       }
 
       db.prepare(`
@@ -883,8 +898,8 @@ app.post('/clients/import', requireAuth, async (req, res) => {
           }
         }
 
-        let subUrl = '';
-        if (inbound.protocol === 'vless' && stream.security === 'reality') {
+        let subUrl = node.id === sourceNode.id ? (rc.originalSub || '') : '';
+        if (!subUrl && inbound.protocol === 'vless' && stream.security === 'reality') {
           const cleanCountryName = `${node.country_name_ru || node.name}`.trim();
           const nodeLabel = `${getCountryFlag(cleanCountryName)} ${cleanCountryName}`.trim();
           subUrl = buildVlessRealityLink(node, inbound, clientRow.uuid, clientRow.display_name, nodeLabel);
@@ -900,6 +915,59 @@ app.post('/clients/import', requireAuth, async (req, res) => {
     }
 
     res.redirect('/clients?message=' + encodeURIComponent(`Импортировано и синхронизировано клиентов: ${imported}`));
+  } catch (err) {
+    res.redirect('/clients?error=' + encodeURIComponent(String(err.message || err)));
+  }
+});
+
+
+app.post('/clients/refresh-subscriptions', requireAuth, async (req, res) => {
+  try {
+    const sourceNodeId = Number(req.body.node_id);
+    const sourceNode = db.prepare('SELECT * FROM nodes WHERE id = ?').get(sourceNodeId);
+    if (!sourceNode) throw new Error('Узел не найден');
+
+    const remoteClients = await importClientsFromNode(sourceNode);
+    const remoteByUuid = new Map(remoteClients.map(rc => [rc.uuid, rc]));
+    const remoteByEmail = new Map(remoteClients.map(rc => [rc.email, rc]));
+
+    const clients = db.prepare('SELECT * FROM clients ORDER BY id ASC').all();
+    let updated = 0;
+
+    for (const client of clients) {
+      const rc = remoteByUuid.get(client.uuid) || remoteByEmail.get(client.login) || remoteByEmail.get(client.display_name);
+      if (!rc) continue;
+
+      const mappings = db.prepare(`
+        SELECT cn.*, n.*
+        FROM client_nodes cn
+        JOIN nodes n ON n.id = cn.node_id
+        WHERE cn.client_id = ?
+        ORDER BY cn.id ASC
+      `).all(client.id);
+
+      const sourceMapping = mappings.find(m => m.node_id === sourceNode.id);
+      const sourceSubUrl = rc.originalSub || (rc.subId ? `${normalizeSubscriptionBaseUrl(sourceNode)}/sub/${rc.subId}` : '');
+
+      if (sourceMapping && sourceSubUrl && sourceMapping.remote_sub_url !== sourceSubUrl) {
+        db.prepare(`
+          UPDATE client_nodes
+          SET remote_sub_url = ?, remote_email = ?, remote_uuid = ?
+          WHERE id = ?
+        `).run(sourceSubUrl, rc.email, rc.uuid, sourceMapping.id);
+        updated++;
+      }
+
+      if (!sourceMapping) {
+        db.prepare(`
+          INSERT INTO client_nodes (client_id, node_id, remote_email, remote_uuid, remote_sub_url)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(client.id, sourceNode.id, rc.email, rc.uuid, sourceSubUrl);
+        updated++;
+      }
+    }
+
+    res.redirect('/clients?message=' + encodeURIComponent(`Подписки обновлены: ${updated}`));
   } catch (err) {
     res.redirect('/clients?error=' + encodeURIComponent(String(err.message || err)));
   }
@@ -1020,14 +1088,28 @@ app.post('/clients/:id/delete', requireAuth, async (req, res) => {
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(Number(req.params.id));
   if (!client) return res.redirect('/clients?error=' + encodeURIComponent('Клиент не найден'));
 
+  const deleteMode = String(req.body.delete_mode || 'all');
   const mappings = db.prepare('SELECT * FROM client_nodes WHERE client_id = ?').all(client.id);
 
-  for (const map of mappings) {
-    try {
-      const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(map.node_id);
-      await deleteClient(node, map.remote_uuid, map.remote_email);
-    } catch (err) {
-      console.error('Delete remote client failed:', err.message);
+  if (deleteMode === 'all') {
+    for (const map of mappings) {
+      try {
+        const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(map.node_id);
+        await deleteClient(node, map.remote_uuid, map.remote_email);
+      } catch (err) {
+        console.error('Delete remote client failed:', err.message);
+      }
+    }
+  } else if (deleteMode === 'secondary') {
+    const sourceMap = mappings[0];
+    for (const map of mappings) {
+      if (sourceMap && map.id === sourceMap.id) continue;
+      try {
+        const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(map.node_id);
+        await deleteClient(node, map.remote_uuid, map.remote_email);
+      } catch (err) {
+        console.error('Delete remote client failed:', err.message);
+      }
     }
   }
 
