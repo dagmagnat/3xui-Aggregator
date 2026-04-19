@@ -184,9 +184,9 @@ validate_domain() {
 
 validate_email() {
   local email="$1"
-  email="$(trim "$email")"
+  email="$(printf '%s' "$email" | tr -d '\r' | xargs)"
 
-  if [[ ! "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+  if ! printf '%s' "$email" | grep -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'; then
     err "Email введён некорректно."
     exit 1
   fi
@@ -533,7 +533,7 @@ prompt_panel_mode() {
       PANEL_DOMAIN="$(trim "$PANEL_DOMAIN")"
       validate_domain "$PANEL_DOMAIN"
 
-      PANEL_EMAIL="$(ask 'Email для SSL (Let'''s Encrypt / Caddy)' "${PANEL_EMAIL:-}")"
+      PANEL_EMAIL="$(ask "Email для SSL (LE / Caddy)" "${PANEL_EMAIL:-}")"
       PANEL_EMAIL="$(trim "$PANEL_EMAIL")"
       validate_email "$PANEL_EMAIL"
       ;;
@@ -572,7 +572,7 @@ prompt_sub_mode() {
       validate_domain "$SUB_DOMAIN"
 
       if [ -z "${PANEL_EMAIL:-}" ]; then
-        PANEL_EMAIL="$(ask 'Email для SSL (Let'''s Encrypt / Caddy)' "${PANEL_EMAIL:-}")"
+        PANEL_EMAIL="$(ask "Email для SSL (LE / Caddy)" "")"
         PANEL_EMAIL="$(trim "$PANEL_EMAIL")"
         validate_email "$PANEL_EMAIL"
       fi
