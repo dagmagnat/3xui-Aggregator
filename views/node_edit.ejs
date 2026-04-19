@@ -1,24 +1,46 @@
-<form method="POST" action="/nodes/<%= node ? node.id : '' %>">
-  <div>
-    <label>Название</label>
-    <input name="name" value="<%= node?.name || '' %>" required />
-  </div>
+<%- include('partials_header') %>
 
-  <div>
-    <label>Panel URL (3x-ui)</label>
-    <input name="panel_url" value="<%= node?.panel_url || '' %>" required />
-  </div>
+<h1>Редактировать узел</h1>
 
-  <div>
+<% if (message) { %>
+  <div class="alert ok"><%= message %></div>
+<% } %>
+
+<% if (error) { %>
+  <div class="alert err"><%= error %></div>
+<% } %>
+
+<div class="card">
+  <form method="post" action="/nodes/<%= node.id %>/edit">
+    <label>Страна</label>
+    <select name="country_code" required>
+      <% countries.forEach(country => { %>
+        <option value="<%= country.code %>" <%= country.code === node.country_code ? 'selected' : '' %>>
+          <%= country.flag %> <%= country.name_ru %>
+        </option>
+      <% }) %>
+    </select>
+
+    <label>Panel URL</label>
+    <input name="panel_url" value="<%= node.panel_url %>" required />
+
     <label>Panel Path</label>
-    <input name="panel_path" value="<%= node?.panel_path || '' %>" />
-  </div>
+    <input name="panel_path" value="<%= node.panel_path || '' %>" />
 
-  <div>
-    <label>SUB Base URL (ВАЖНО)</label>
-    <input name="sub_base_url" placeholder="https://fin.amoredd.ru:5228"
-           value="<%= node?.sub_base_url || '' %>" />
-  </div>
+    <label>Логин панели</label>
+    <input name="username" value="<%= node.username %>" required />
 
-  <button type="submit">Сохранить</button>
-</form>
+    <label>Новый пароль панели</label>
+    <input name="password" type="password" placeholder="Оставь пустым, чтобы не менять" />
+
+    <label>Inbound ID</label>
+    <input name="inbound_id" type="number" min="1" value="<%= node.inbound_id %>" required />
+
+    <div style="display:flex; gap:8px; margin-top:16px; flex-wrap:wrap;">
+      <button type="submit" style="width:auto">Сохранить</button>
+      <a href="/nodes" class="link-btn" style="display:inline-flex; align-items:center;">Назад</a>
+    </div>
+  </form>
+</div>
+
+<%- include('partials_footer') %>
