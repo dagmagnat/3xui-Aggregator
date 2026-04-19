@@ -60,6 +60,24 @@ trim() {
   echo "$var"
 }
 
+validate_domain() {
+  local domain="$1"
+  domain="$(trim "$domain")"
+  if ! printf '%s' "$domain" | grep -Eq '^[A-Za-z0-9.-]+$'; then
+    err "Домен введён некорректно: $domain"
+    exit 1
+  fi
+}
+
+validate_email() {
+  local email="$1"
+  email="$(trim "$email")"
+  if ! printf '%s' "$email" | grep -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'; then
+    err "Email введён некорректно."
+    exit 1
+  fi
+}
+
 port_in_use() {
   local port="$1"
   ss -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "(^|:)${port}$"
@@ -97,7 +115,6 @@ load_existing_config() {
   SUB_DOMAIN="${SUB_DOMAIN:-}"
   SUB_IP="${SUB_IP:-}"
 
-  BASE_URL_VALUE="${BASE_URL:-}"
   PANEL_PUBLIC_URL="${PANEL_PUBLIC_URL:-}"
   SUB_PUBLIC_URL="${SUB_PUBLIC_URL:-}"
 }
@@ -135,64 +152,6 @@ PANEL_PUBLIC_URL=${PANEL_PUBLIC_URL}
 SUB_PUBLIC_URL=${SUB_PUBLIC_URL}
 NODE_ENV=production
 EOF
-}
-
-check_domain_ports_if_needed() {
-  local need_80_443="0"
-
-  if [ "${PANEL_MODE}" = "domain" ] || [ "${SUB_MODE}" = "domain" ]; then
-    need_80_443="1"
-  fi
-
-  if [ "$need_80_443" != "1" ]; then
-    return
-  fi
-
-  local bad=0
-
-  if port_in_use 80; then
-    err "Порт 80 уже занят. Для доменного режима через встроенный Caddy он должен быть свободен."
-    bad=1
-  fi
-
-  if port_in_use 443; then
-    err "Порт 443 уже занят. Для доменного режима через встроенный Caddy он должен быть свободен."
-    bad=1
-  fi
-
-  if [ "$bad" -eq 1 ]; then
-    warn "На этом сервере уже заняты 80/443."
-    warn "Если это был старый стек агрегатора, он должен был быть уже остановлен."
-    warn "Если порты всё ещё заняты — их использует другой сервис, не сам агрегатор."
-    warn "Кто держит порты:"
-    ss -ltnp 2>/dev/null | grep -E '(:80 |:443 )' || true
-    warn "Варианты:"
-    warn "1) установить агрегатор по IP"
-    warn "2) вынести агрегатор на отдельный сервер"
-    warn "3) настроить общий reverse proxy вручную"
-    exit 1
-  fi
-}
-
-validate_domain() {
-  local domain="$1"
-  if ! printf '%s' "$domain" | grep -Eq '^[A-Za-z0-9.-]+$'; then
-    err "Домен введён некорректно: $domain"
-    exit 1
-  fi
-}
-
-validate_email() {
-  local email="$1"
-
-  # убираем \r если есть
-  email="${email//$'\r'/}"
-
-  # простая проверка
-  if [[ ! "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
-    err "Email введён некорректно."
-    exit 1
-  fi
 }
 
 install_packages() {
@@ -363,7 +322,6 @@ write_runtime_files() {
 
   [ "$PANEL_MODE" = "domain" ] && has_domain="1"
   [ "$SUB_MODE" = "domain" ] && has_domain="1"
-
   [ "$PANEL_MODE" = "ip" ] && has_ip="1"
   [ "$SUB_MODE" = "ip" ] && has_ip="1"
 
@@ -371,7 +329,6 @@ write_runtime_files() {
 
   if [ "$has_domain" = "1" ]; then
     write_caddyfile_single_or_dual
-
     if [ "$has_ip" = "1" ]; then
       write_compose_mixed_domain_ip
     else
@@ -401,14 +358,11 @@ stop_existing_aggregator_stack() {
   fi
 
   info "Обнаружен существующий стек агрегатора. Временно останавливаю для обновления..."
-
   cd "$APP_DIR" || return
 
   docker compose down --remove-orphans || true
-
   docker stop 3xui-aggregator-caddy >/dev/null 2>&1 || true
   docker rm -f 3xui-aggregator-caddy >/dev/null 2>&1 || true
-
   docker stop 3xui-aggregator >/dev/null 2>&1 || true
   docker rm -f 3xui-aggregator >/dev/null 2>&1 || true
 }
@@ -423,7 +377,6 @@ EOF
 
 create_backup() {
   say "Создаю резервную копию..."
-
   mkdir -p "$BACKUP_DIR"
 
   local stamp archive_name archive_path
@@ -432,7 +385,6 @@ create_backup() {
   archive_path="$BACKUP_DIR/$archive_name"
 
   stop_existing_aggregator_stack
-
   tar -czf "$archive_path" -C /opt 3xui-aggregator
 
   say "Резервная копия создана:"
@@ -446,7 +398,6 @@ create_backup() {
 
 restore_from_backup() {
   say "Восстановление из резервной копии"
-
   mkdir -p "$BACKUP_DIR"
 
   local latest_backup=""
@@ -462,7 +413,6 @@ restore_from_backup() {
   fi
 
   stop_existing_aggregator_stack
-
   rm -rf "$APP_DIR"
   mkdir -p /opt
 
@@ -514,7 +464,7 @@ build_urls() {
 
 prompt_panel_mode() {
   echo
-  say "Настройка адреса панели:"
+  say "Выбери режим для панели:"
   say "1 - По IP"
   say "2 - По домену"
   say "3 - Пропустить, оставить как есть"
@@ -536,7 +486,7 @@ prompt_panel_mode() {
       PANEL_DOMAIN="$(trim "$PANEL_DOMAIN")"
       validate_domain "$PANEL_DOMAIN"
 
-      PANEL_EMAIL="$(ask "Email для SSL (LE / Caddy)" "${PANEL_EMAIL:-}")"
+      PANEL_EMAIL="$(ask 'Email для SSL (LE / Caddy)' "${PANEL_EMAIL:-}")"
       PANEL_EMAIL="$(trim "$PANEL_EMAIL")"
       validate_email "$PANEL_EMAIL"
       ;;
@@ -575,7 +525,7 @@ prompt_sub_mode() {
       validate_domain "$SUB_DOMAIN"
 
       if [ -z "${PANEL_EMAIL:-}" ]; then
-        PANEL_EMAIL="$(ask "Email для SSL (LE / Caddy)" "")"
+        PANEL_EMAIL="$(ask 'Email для SSL (LE / Caddy)' '')"
         PANEL_EMAIL="$(trim "$PANEL_EMAIL")"
         validate_email "$PANEL_EMAIL"
       fi
@@ -680,7 +630,7 @@ first_install_wizard() {
       PANEL_DOMAIN="$(trim "$PANEL_DOMAIN")"
       validate_domain "$PANEL_DOMAIN"
 
-      PANEL_EMAIL="$(ask "Email для SSL (LE / Caddy)" '')"
+      PANEL_EMAIL="$(ask 'Email для SSL (LE / Caddy)' '')"
       PANEL_EMAIL="$(trim "$PANEL_EMAIL")"
       validate_email "$PANEL_EMAIL"
       ;;
@@ -711,7 +661,7 @@ first_install_wizard() {
       validate_domain "$SUB_DOMAIN"
 
       if [ -z "${PANEL_EMAIL:-}" ]; then
-        PANEL_EMAIL="$(ask "Email для SSL (LE / Caddy)" '')"
+        PANEL_EMAIL="$(ask 'Email для SSL (LE / Caddy)' '')"
         PANEL_EMAIL="$(trim "$PANEL_EMAIL")"
         validate_email "$PANEL_EMAIL"
       fi
