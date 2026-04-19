@@ -84,7 +84,6 @@ function initDb() {
       name TEXT NOT NULL,
       panel_url TEXT NOT NULL,
       panel_path TEXT DEFAULT '',
-      sub_base_url TEXT DEFAULT '',
       username TEXT NOT NULL,
       password_enc TEXT NOT NULL,
       inbound_id INTEGER NOT NULL,
@@ -122,7 +121,6 @@ function initDb() {
   try { db.prepare(`ALTER TABLE nodes ADD COLUMN country_code TEXT DEFAULT ''`).run(); } catch (_) {}
   try { db.prepare(`ALTER TABLE nodes ADD COLUMN country_name_ru TEXT DEFAULT ''`).run(); } catch (_) {}
   try { db.prepare(`ALTER TABLE nodes ADD COLUMN country_flag TEXT DEFAULT ''`).run(); } catch (_) {}
-  try { db.prepare(`ALTER TABLE nodes ADD COLUMN sub_base_url TEXT DEFAULT ''`).run(); } catch (_) {}
 
   const existingAdmin = db.prepare('SELECT id FROM app_users WHERE username = ?').get(ADMIN_USERNAME);
   if (!existingAdmin) {
@@ -160,13 +158,6 @@ function normalizeRootUrl(panelUrl, panelPath) {
   let path = (panelPath || '').trim();
   if (path && !path.startsWith('/')) path = `/${path}`;
   return `${url}${path}`.replace(/\/$/, '');
-}
-
-function normalizeSubscriptionBaseUrl(node) {
-  const explicit = String(node?.sub_base_url || '').trim();
-  if (explicit) return explicit.replace(/\/$/, '');
-
-  return normalizeRootUrl(node?.panel_url || '', node?.panel_path || '');
 }
 
 async function safeJson(response) {
@@ -344,6 +335,51 @@ async function checkNode(node) {
   }
 }
 
+function decodeMaybeBase64Subscription(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+  if (raw.includes('://')) return raw;
+
+  try {
+    const normalized = raw.replace(/\s+/g, '');
+    const decoded = Buffer.from(normalized, 'base64').toString('utf8').trim();
+    if (decoded.includes('://')) return decoded;
+  } catch (_) {}
+
+  return raw;
+}
+
+async function fetchSubscriptionLines(url) {
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0',
+      'Accept': 'text/plain,*/*'
+    },
+    redirect: 'follow'
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch subscription (${response.status})`);
+  }
+
+  const text = decodeMaybeBase64Subscription(await response.text());
+
+  return text
+    .split(/?
+/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .filter(line => (
+      line.startsWith('vless://') ||
+      line.startsWith('vmess://') ||
+      line.startsWith('trojan://') ||
+      line.startsWith('ss://') ||
+      line.startsWith('hysteria://') ||
+      line.startsWith('hy2://') ||
+      line.startsWith('tuic://')
+    ));
+}
+
 async function buildSubscriptionLines(clientRow, includeOffline = true) {
   const rows = db.prepare(`
     SELECT
@@ -355,6 +391,7 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
       n.name,
       n.panel_url,
       n.panel_path,
+      n.sub_base_url,
       n.username,
       n.password_enc,
       n.inbound_id,
@@ -371,16 +408,25 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
   `).all(clientRow.id);
 
   const lines = [];
+  const seen = new Set();
 
   for (const row of rows) {
     try {
       if (!includeOffline && row.last_status === 'offline') continue;
 
-      // 🔥 ГЛАВНОЕ ИЗМЕНЕНИЕ
-      // если есть оригинальная ссылка → используем её
       if (row.remote_sub_url && row.remote_sub_url.startsWith('http')) {
-        lines.push(row.remote_sub_url);
-        continue;
+        try {
+          const importedLines = await fetchSubscriptionLines(row.remote_sub_url);
+          for (const line of importedLines) {
+            if (!seen.has(line)) {
+              seen.add(line);
+              lines.push(line);
+            }
+          }
+          continue;
+        } catch (err) {
+          console.error('Failed to fetch remote subscription:', row.remote_sub_url, err.message);
+        }
       }
 
       const inbound = await getInbound(row);
@@ -401,10 +447,10 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
         );
       }
 
-      if (subUrl) {
+      if (subUrl && !seen.has(subUrl)) {
+        seen.add(subUrl);
         lines.push(subUrl);
 
-        // обновляем только если не было
         if (!row.remote_sub_url) {
           db.prepare(`
             UPDATE client_nodes
@@ -414,7 +460,8 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
         }
       }
     } catch (err) {
-      if (includeOffline && row.remote_sub_url) {
+      if (includeOffline && row.remote_sub_url && !seen.has(row.remote_sub_url)) {
+        seen.add(row.remote_sub_url);
         lines.push(row.remote_sub_url);
       }
     }
@@ -485,7 +532,7 @@ async function importClientsFromNode(node) {
     let originalSub = '';
 
     if (c.subId) {
-      originalSub = `${normalizeSubscriptionBaseUrl(node)}/sub/${c.subId}`;
+      originalSub = `${node.panel_url}/sub/${c.subId}`;
     }
 
     return {
@@ -586,7 +633,7 @@ app.get('/nodes', requireAuth, (req, res) => {
 
 app.post('/nodes', requireAuth, async (req, res) => {
   try {
-    const { panel_url, panel_path, sub_base_url, username, password, inbound_id, country_code } = req.body;
+    const { panel_url, panel_path, username, password, inbound_id, country_code } = req.body;
 
     const country = COUNTRIES.find(c => c.code === country_code);
     if (!country) throw new Error('Страна не найдена');
@@ -596,7 +643,6 @@ app.post('/nodes', requireAuth, async (req, res) => {
         name,
         panel_url,
         panel_path,
-        sub_base_url,
         username,
         password_enc,
         inbound_id,
@@ -604,12 +650,11 @@ app.post('/nodes', requireAuth, async (req, res) => {
         country_name_ru,
         country_flag
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       country.name_ru,
       panel_url,
       panel_path || '',
-      String(sub_base_url || '').trim(),
       username,
       encrypt(password, APP_SECRET),
       Number(inbound_id),
@@ -665,8 +710,7 @@ app.post('/nodes/:id/edit', requireAuth, async (req, res) => {
       username,
       password,
       inbound_id,
-      country_code,
-      sub_base_url
+      country_code
     } = req.body;
 
     const country = COUNTRIES.find(c => c.code === country_code);
@@ -684,7 +728,6 @@ app.post('/nodes/:id/edit', requireAuth, async (req, res) => {
         panel_url = ?,
         panel_path = ?,
         username = ?,
-        sub_base_url = ?,
         password_enc = ?,
         inbound_id = ?,
         country_code = ?,
@@ -696,7 +739,6 @@ app.post('/nodes/:id/edit', requireAuth, async (req, res) => {
       String(panel_url || '').trim(),
       String(panel_path || '').trim(),
       String(username || '').trim(),
-      String(sub_base_url || '').trim(),
       updatedPasswordEnc,
       Number(inbound_id),
       country.code,
@@ -791,11 +833,10 @@ app.post('/clients', requireAuth, async (req, res) => {
 
       await addClient(node, clientPayload);
 
-      let subUrl = '';
+      let subUrl = rc.originalSub || '';
       if (inbound.protocol === 'vless' && stream.security === 'reality') {
         const cleanCountryName = `${node.country_name_ru || node.name}`.trim();
         const nodeLabel = `${getCountryFlag(cleanCountryName)} ${cleanCountryName}`.trim();
-        subUrl = buildVlessRealityLink(node, inbound, uuid, cleanDisplayName, nodeLabel);
       }
 
       db.prepare(`
@@ -898,8 +939,8 @@ app.post('/clients/import', requireAuth, async (req, res) => {
           }
         }
 
-        let subUrl = node.id === sourceNode.id ? (rc.originalSub || '') : '';
-        if (!subUrl && inbound.protocol === 'vless' && stream.security === 'reality') {
+        let subUrl = '';
+        if (inbound.protocol === 'vless' && stream.security === 'reality') {
           const cleanCountryName = `${node.country_name_ru || node.name}`.trim();
           const nodeLabel = `${getCountryFlag(cleanCountryName)} ${cleanCountryName}`.trim();
           subUrl = buildVlessRealityLink(node, inbound, clientRow.uuid, clientRow.display_name, nodeLabel);
@@ -915,59 +956,6 @@ app.post('/clients/import', requireAuth, async (req, res) => {
     }
 
     res.redirect('/clients?message=' + encodeURIComponent(`Импортировано и синхронизировано клиентов: ${imported}`));
-  } catch (err) {
-    res.redirect('/clients?error=' + encodeURIComponent(String(err.message || err)));
-  }
-});
-
-
-app.post('/clients/refresh-subscriptions', requireAuth, async (req, res) => {
-  try {
-    const sourceNodeId = Number(req.body.node_id);
-    const sourceNode = db.prepare('SELECT * FROM nodes WHERE id = ?').get(sourceNodeId);
-    if (!sourceNode) throw new Error('Узел не найден');
-
-    const remoteClients = await importClientsFromNode(sourceNode);
-    const remoteByUuid = new Map(remoteClients.map(rc => [rc.uuid, rc]));
-    const remoteByEmail = new Map(remoteClients.map(rc => [rc.email, rc]));
-
-    const clients = db.prepare('SELECT * FROM clients ORDER BY id ASC').all();
-    let updated = 0;
-
-    for (const client of clients) {
-      const rc = remoteByUuid.get(client.uuid) || remoteByEmail.get(client.login) || remoteByEmail.get(client.display_name);
-      if (!rc) continue;
-
-      const mappings = db.prepare(`
-        SELECT cn.*, n.*
-        FROM client_nodes cn
-        JOIN nodes n ON n.id = cn.node_id
-        WHERE cn.client_id = ?
-        ORDER BY cn.id ASC
-      `).all(client.id);
-
-      const sourceMapping = mappings.find(m => m.node_id === sourceNode.id);
-      const sourceSubUrl = rc.originalSub || (rc.subId ? `${normalizeSubscriptionBaseUrl(sourceNode)}/sub/${rc.subId}` : '');
-
-      if (sourceMapping && sourceSubUrl && sourceMapping.remote_sub_url !== sourceSubUrl) {
-        db.prepare(`
-          UPDATE client_nodes
-          SET remote_sub_url = ?, remote_email = ?, remote_uuid = ?
-          WHERE id = ?
-        `).run(sourceSubUrl, rc.email, rc.uuid, sourceMapping.id);
-        updated++;
-      }
-
-      if (!sourceMapping) {
-        db.prepare(`
-          INSERT INTO client_nodes (client_id, node_id, remote_email, remote_uuid, remote_sub_url)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(client.id, sourceNode.id, rc.email, rc.uuid, sourceSubUrl);
-        updated++;
-      }
-    }
-
-    res.redirect('/clients?message=' + encodeURIComponent(`Подписки обновлены: ${updated}`));
   } catch (err) {
     res.redirect('/clients?error=' + encodeURIComponent(String(err.message || err)));
   }
