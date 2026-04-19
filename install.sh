@@ -127,6 +127,12 @@ ensure_dir() {
 }
 
 load_existing_config() {
+  APP_PORT="${APP_PORT:-3000}"
+  ADMIN_USER="${ADMIN_USER:-admin}"
+  ADMIN_PASS="${ADMIN_PASS:-}"
+  APP_SECRET_VALUE="${APP_SECRET_VALUE:-}"
+  SESSION_SECRET_VALUE="${SESSION_SECRET_VALUE:-}"
+
   if [ -f "$ENV_FILE" ]; then
     while IFS='=' read -r key value; do
       [ -z "$key" ] && continue
@@ -136,24 +142,16 @@ load_existing_config() {
         ADMIN_PASSWORD) ADMIN_PASS="$value" ;;
         APP_SECRET) APP_SECRET_VALUE="$value" ;;
         SESSION_SECRET) SESSION_SECRET_VALUE="$value" ;;
-        BASE_URL) BASE_URL_VALUE="$value" ;;
         PANEL_PUBLIC_URL) PANEL_PUBLIC_URL="$value" ;;
         SUB_PUBLIC_URL) SUB_PUBLIC_URL="$value" ;;
       esac
-    done < <(grep -E '^(PORT|ADMIN_USERNAME|ADMIN_PASSWORD|APP_SECRET|SESSION_SECRET|BASE_URL|PANEL_PUBLIC_URL|SUB_PUBLIC_URL)=' "$ENV_FILE" || true)
+    done < <(grep -E '^(PORT|ADMIN_USERNAME|ADMIN_PASSWORD|APP_SECRET|SESSION_SECRET|PANEL_PUBLIC_URL|SUB_PUBLIC_URL)=' "$ENV_FILE" || true)
   fi
 
   if [ -f "$INSTALL_CONF" ]; then
     # shellcheck disable=SC1090
     source "$INSTALL_CONF"
   fi
-
-  APP_PORT="${APP_PORT:-3000}"
-  ADMIN_USER="${ADMIN_USER:-admin}"
-  ADMIN_PASS="${ADMIN_PASS:-}"
-
-  APP_SECRET_VALUE="${APP_SECRET_VALUE:-}"
-  SESSION_SECRET_VALUE="${SESSION_SECRET_VALUE:-}"
 
   PANEL_MODE="${PANEL_MODE:-ip}"
   PANEL_DOMAIN="${PANEL_DOMAIN:-}"
@@ -164,7 +162,6 @@ load_existing_config() {
   SUB_DOMAIN="${SUB_DOMAIN:-}"
   SUB_IP="${SUB_IP:-}"
 
-  BASE_URL_VALUE="${BASE_URL_VALUE:-}"
   PANEL_PUBLIC_URL="${PANEL_PUBLIC_URL:-}"
   SUB_PUBLIC_URL="${SUB_PUBLIC_URL:-}"
 }
