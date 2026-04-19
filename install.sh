@@ -187,6 +187,9 @@ write_env_file() {
     SESSION_SECRET_VALUE="$(openssl rand -hex 32)"
   fi
 
+  ADMIN_USER="$(printf '%s' "$ADMIN_USER" | tr -d '\r\n')"
+  ADMIN_PASS="$(printf '%s' "$ADMIN_PASS" | tr -d '\r\n')"
+
   cat > "$ENV_FILE" <<EOF
 PORT=${APP_PORT}
 APP_SECRET=${APP_SECRET_VALUE}
