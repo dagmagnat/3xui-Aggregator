@@ -132,6 +132,8 @@ load_existing_config() {
   ADMIN_PASS="${ADMIN_PASS:-}"
   APP_SECRET_VALUE="${APP_SECRET_VALUE:-}"
   SESSION_SECRET_VALUE="${SESSION_SECRET_VALUE:-}"
+  PANEL_PUBLIC_URL="${PANEL_PUBLIC_URL:-}"
+  SUB_PUBLIC_URL="${SUB_PUBLIC_URL:-}"
 
   if [ -f "$ENV_FILE" ]; then
     while IFS='=' read -r key value; do
@@ -161,9 +163,6 @@ load_existing_config() {
   SUB_MODE="${SUB_MODE:-$PANEL_MODE}"
   SUB_DOMAIN="${SUB_DOMAIN:-}"
   SUB_IP="${SUB_IP:-}"
-
-  PANEL_PUBLIC_URL="${PANEL_PUBLIC_URL:-}"
-  SUB_PUBLIC_URL="${SUB_PUBLIC_URL:-}"
 }
 
 save_install_conf() {
