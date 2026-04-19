@@ -72,6 +72,7 @@ validate_domain() {
 validate_email() {
   local email="$1"
   email="$(trim "$email")"
+
   if ! printf '%s' "$email" | grep -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'; then
     err "Email введён некорректно."
     exit 1
