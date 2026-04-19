@@ -365,8 +365,7 @@ async function fetchSubscriptionLines(url) {
   const text = decodeMaybeBase64Subscription(await response.text());
 
   return text
-    .split(/?
-/)
+    .split(/\r?\n/)
     .map(line => line.trim())
     .filter(Boolean)
     .filter(line => (
