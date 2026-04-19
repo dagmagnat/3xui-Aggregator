@@ -385,6 +385,24 @@ stop_stack_if_exists() {
   fi
 }
 
+stop_existing_aggregator_stack() {
+  if [ ! -d "$APP_DIR" ]; then
+    return
+  fi
+
+  info "Обнаружен существующий стек агрегатора. Временно останавливаю для обновления..."
+
+  cd "$APP_DIR" || return
+
+  docker compose down --remove-orphans || true
+
+  docker stop 3xui-aggregator-caddy >/dev/null 2>&1 || true
+  docker rm -f 3xui-aggregator-caddy >/dev/null 2>&1 || true
+
+  docker stop 3xui-aggregator >/dev/null 2>&1 || true
+  docker rm -f 3xui-aggregator >/dev/null 2>&1 || true
+}
+
 get_public_server_ip() {
   local server_ip
   server_ip="$(curl -4 -fsSL https://api.ipify.org || echo "127.0.0.1")"
@@ -654,12 +672,11 @@ prepare_config_and_run() {
     had_existing_stack="1"
   fi
 
-  # Если это обновление существующего агрегатора — сначала временно останавливаем его
   if [ "$had_existing_stack" = "1" ]; then
-    info "Обнаружен существующий стек агрегатора. Временно останавливаю для обновления..."
-    cd "$APP_DIR"
-    docker compose down || true
+    stop_existing_aggregator_stack
   fi
+
+  sleep 2
 
   check_domain_ports_if_needed
   build_urls "$server_ip"
@@ -690,11 +707,7 @@ update_files_only() {
     exit 1
   fi
 
-  if [ -f "$APP_DIR/docker-compose.yml" ]; then
-    info "Временно останавливаю текущий стек агрегатора..."
-    cd "$APP_DIR"
-    docker compose down || true
-  fi
+  stop_existing_aggregator_stack
 
   clone_or_update_repo "$REPO_URL_DEFAULT" "$BRANCH_DEFAULT"
   load_existing_config
@@ -703,11 +716,12 @@ update_files_only() {
 
 change_settings_and_update() {
   say "Изменяю настройки и обновляю проект..."
-  clone_or_update_repo "$REPO_URL_DEFAULT" "$BRANCH_DEFAULT"
   load_existing_config
 
   if [ -z "${ADMIN_PASS:-}" ]; then
     warn "Старые настройки не найдены, запускаю мастер первой установки."
+    clone_or_update_repo "$REPO_URL_DEFAULT" "$BRANCH_DEFAULT"
+    load_existing_config
     first_install_wizard
     prepare_config_and_run
     return
@@ -718,12 +732,15 @@ change_settings_and_update() {
   prompt_port_change
   prompt_admin_change
 
+  stop_existing_aggregator_stack
+  clone_or_update_repo "$REPO_URL_DEFAULT" "$BRANCH_DEFAULT"
+  load_existing_config
   prepare_config_and_run
 }
 
 reinstall_full() {
   warn "Полная переустановка..."
-  stop_stack_if_exists
+  stop_existing_aggregator_stack
   rm -rf "$APP_DIR"
   mkdir -p "$APP_DIR"
 
