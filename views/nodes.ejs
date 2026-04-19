@@ -28,6 +28,10 @@
       <label>Panel Path</label>
       <input name="panel_path" placeholder="/qwerty123" />
 
+      <label>SUB Base URL</label>
+      <input name="sub_base_url" placeholder="https://fin.amoredd.ru:5228" />
+      <small>Сюда укажи реальный внешний адрес подписок именно этого узла. Для главного сервера у тебя это, например, https://fin.amoredd.ru:5228</small>
+
       <label>Логин панели</label>
       <input name="username" placeholder="admin" required />
 
@@ -45,6 +49,7 @@
     <h2>Подсказка</h2>
     <p>Panel URL — это адрес панели 3x-ui, включая порт, если он используется.</p>
     <p>Panel Path — секретный путь панели, если он включён. Если пути нет, оставь поле пустым.</p>
+    <p>SUB Base URL — реальный адрес, по которому открываются подписки этого узла. Именно он нужен для корректного импорта старых клиентов.</p>
     <p>Inbound ID — это inbound, куда агрегатор будет добавлять клиентов на этом узле.</p>
   </div>
 </div>
@@ -60,6 +65,7 @@
         <th>ID</th>
         <th>Страна</th>
         <th>Panel URL</th>
+        <th>SUB Base URL</th>
         <th>Path</th>
         <th>Inbound</th>
         <th>Статус</th>
@@ -72,6 +78,7 @@
           <td><%= node.id %></td>
           <td><%= node.country_flag || '' %> <%= node.country_name_ru || node.name %></td>
           <td><%= node.panel_url %></td>
+          <td><%= node.sub_base_url || '-' %></td>
           <td><%= node.panel_path || '-' %></td>
           <td><%= node.inbound_id %></td>
           <td>

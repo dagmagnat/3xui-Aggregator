@@ -27,6 +27,10 @@
     <label>Panel Path</label>
     <input name="panel_path" value="<%= node.panel_path || '' %>" />
 
+    <label>SUB Base URL</label>
+    <input name="sub_base_url" value="<%= node.sub_base_url || '' %>" placeholder="https://fin.amoredd.ru:5228" />
+    <small>Для главного узла укажи точный внешний адрес подписок, включая нестандартный порт.</small>
+
     <label>Логин панели</label>
     <input name="username" value="<%= node.username %>" required />
 
