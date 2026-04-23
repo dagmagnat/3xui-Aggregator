@@ -1,21 +1,82 @@
-FROM node:20-bookworm-slim
+<%- include('partials_header') %>
 
-WORKDIR /app
+<h1><%= client.display_name %></h1>
 
-COPY package.json package-lock.json* ./
+<div class="card">
+  <p><strong>Логин:</strong> <%= client.login %></p>
+  <p><strong>UUID:</strong> <%= client.uuid %></p>
 
-ENV NODE_OPTIONS=--dns-result-order=ipv4first
+  <p>
+    <strong>Общая подписка:</strong><br>
+    <a href="<%= baseUrl %>/sub/<%= client.sub_slug %>" target="_blank">
+      <%= baseUrl %>/sub/<%= client.sub_slug %>
+    </a>
+  </p>
 
-RUN npm config set registry https://registry.npmjs.org/ \
- && npm config set fetch-retries 5 \
- && npm config set fetch-retry-mintimeout 20000 \
- && npm config set fetch-retry-maxtimeout 120000 \
- && npm install --omit=dev
+  <button
+    type="button"
+    class="link-btn"
+    onclick="copySubLink('<%= baseUrl %>/sub/<%= client.sub_slug %>')"
+  >
+    Скопировать подписку
+  </button>
+</div>
 
-COPY . .
+<div class="card">
+  <h2>Добавить клиента на другие узлы</h2>
 
-RUN mkdir -p /app/data
+  <form method="post" action="/clients/<%= client.id %>/sync">
+    <div class="checkbox-list">
+      <% nodes.forEach(node => { %>
+        <label>
+          <input class="inline" type="checkbox" name="node_ids" value="<%= node.id %>" />
+          <%= node.country_name_ru || node.name %> (inbound <%= node.inbound_id %>)
+        </label>
+      <% }) %>
+    </div>
 
-EXPOSE 3000
+    <button type="submit" style="margin-top:10px;">Добавить на выбранные узлы</button>
+  </form>
+</div>
 
-CMD ["npm", "start"]
+<div class="card">
+  <h2>Узлы клиента</h2>
+  <table>
+    <tr>
+      <th>Узел</th>
+      <th>Статус</th>
+      <th>Email в 3x-ui</th>
+      <th>Ссылка</th>
+    </tr>
+
+    <% mappings.forEach(row => { %>
+      <tr>
+        <td><%= row.node_name %></td>
+        <td><span class="badge <%= row.last_status %>"><%= row.last_status %></span></td>
+        <td><%= row.remote_email %></td>
+        <td>
+          <% if (row.remote_sub_url) { %>
+            <pre style="white-space:pre-wrap; word-break:break-word;"><%= row.remote_sub_url %></pre>
+          <% } else { %>
+            <span>Нет ссылки</span>
+          <% } %>
+        </td>
+      </tr>
+    <% }) %>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Агрегированная подписка</h2>
+  <pre style="white-space:pre-wrap; word-break:break-word;"><%= subscription %></pre>
+</div>
+
+<script>
+function copySubLink(text) {
+  navigator.clipboard.writeText(text)
+    .then(() => alert('Ссылка подписки скопирована'))
+    .catch(() => alert('Не удалось скопировать ссылку'));
+}
+</script>
+
+<%- include('partials_footer') %>

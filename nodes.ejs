@@ -1,48 +1,72 @@
-<%- include('partials_header') %>
-<h1>Главная</h1>
+<%- include('partials_header', { pageTitle: 'Главная', pageSubtitle: 'Обзор узлов, клиентов и общей подписки', activePage: 'dashboard' }) %>
+
 <div class="grid">
-  <div class="card"><div class="small">Узлов</div><div style="font-size:32px"><%= stats.nodes %></div></div>
-  <div class="card"><div class="small">Клиентов</div><div style="font-size:32px"><%= stats.clients %></div></div>
-  <div class="card"><div class="small">Онлайн</div><div style="font-size:32px"><%= stats.online %></div></div>
-  <div class="card"><div class="small">Оффлайн</div><div style="font-size:32px"><%= stats.offline %></div></div>
-</div>
-<div class="card">
-  <h2>Как это работает</h2>
-  <p>1. Добавляешь сюда свои 3x-ui узлы.</p>
-  <p>2. Для каждого узла указываешь inbound ID, куда надо добавлять клиентов.</p>
-  <p>3. Создаёшь клиента один раз — панель создаёт его на выбранных узлах.</p>
-  <p>4. Общая подписка доступна по ссылке вида <code><%= baseUrl %>/sub/SLUG</code>.</p>
-</div>
-<div class="row">
-  <div class="card">
+  <section class="stats-card span-3">
+    <div class="stats-label">Узлов</div>
+    <div class="stats-number"><%= stats.nodes %></div>
+  </section>
+  <section class="stats-card span-3">
+    <div class="stats-label">Клиентов</div>
+    <div class="stats-number"><%= stats.clients %></div>
+  </section>
+  <section class="stats-card span-3">
+    <div class="stats-label">Онлайн</div>
+    <div class="stats-number"><%= stats.online %></div>
+  </section>
+  <section class="stats-card span-3">
+    <div class="stats-label">Оффлайн</div>
+    <div class="stats-number"><%= stats.offline %></div>
+  </section>
+
+  <section class="card span-12">
+    <h2>Как это работает</h2>
+    <ol class="list-steps">
+      <li>Добавляешь сюда свои 3x-ui узлы.</li>
+      <li>Для каждого узла указываешь inbound ID, куда надо добавлять клиентов.</li>
+      <li>Создаёшь клиента один раз — панель создаёт его на выбранных узлах.</li>
+      <li>Общая подписка доступна по ссылке вида <span class="code-inline"><%= baseUrl %>/sub/SLUG</span>.</li>
+    </ol>
+  </section>
+
+  <section class="card span-6">
     <h2>Последние узлы</h2>
-    <table>
-      <tr><th>Имя</th><th>Статус</th></tr>
-      <% nodes.forEach(node => { %>
-      <tr>
-        <td><%= node.name %></td>
-        <td><span class="badge <%= node.last_status %>"><%= node.last_status %></span></td>
-      </tr>
-      <% }) %>
-    </table>
-  </div>
-  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Имя</th><th>Статус</th></tr>
+        </thead>
+        <tbody>
+          <% nodes.forEach(node => { %>
+            <tr>
+              <td><%= node.name %></td>
+              <td>
+                <span class="badge <%= node.last_status || 'unknown' %>"><%= node.last_status || 'unknown' %></span>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card span-6">
     <h2>Последние клиенты</h2>
-    <table>
-      <tr><th>Логин</th><th>Подписка</th></tr>
-      <% clients.forEach(client => { %>
-      <tr>
-        <td><a href="/clients/<%= client.id %>"><%= client.display_name %></a></td>
-        <td><button
-  type="button"
-  class="link-btn"
-  onclick="navigator.clipboard.writeText('<%= baseUrl %>/sub/<%= client.sub_slug %>')"
->
-  Скопировать
-</button></td>
-      </tr>
-      <% }) %>
-    </table>
-  </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Логин</th><th>Подписка</th></tr>
+        </thead>
+        <tbody>
+          <% clients.forEach(client => { %>
+            <tr>
+              <td><a href="/clients/<%= client.id %>"><%= client.display_name %></a></td>
+              <td><a href="<%= baseUrl %>/sub/<%= client.sub_slug %>" target="_blank">Открыть</a></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </section>
 </div>
+
 <%- include('partials_footer') %>

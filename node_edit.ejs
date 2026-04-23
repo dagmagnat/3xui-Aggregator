@@ -1,72 +1,43 @@
-<%- include('partials_header', { pageTitle: 'Главная', pageSubtitle: 'Обзор узлов, клиентов и общей подписки', activePage: 'dashboard' }) %>
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Клиенты</title>
+</head>
+<body style="background:#0b1220;color:white;font-family:sans-serif">
 
-<div class="grid">
-  <section class="stats-card span-3">
-    <div class="stats-label">Узлов</div>
-    <div class="stats-number"><%= stats.nodes %></div>
-  </section>
-  <section class="stats-card span-3">
-    <div class="stats-label">Клиентов</div>
-    <div class="stats-number"><%= stats.clients %></div>
-  </section>
-  <section class="stats-card span-3">
-    <div class="stats-label">Онлайн</div>
-    <div class="stats-number"><%= stats.online %></div>
-  </section>
-  <section class="stats-card span-3">
-    <div class="stats-label">Оффлайн</div>
-    <div class="stats-number"><%= stats.offline %></div>
-  </section>
+<h2>Импорт клиентов</h2>
 
-  <section class="card span-12">
-    <h2>Как это работает</h2>
-    <ol class="list-steps">
-      <li>Добавляешь сюда свои 3x-ui узлы.</li>
-      <li>Для каждого узла указываешь inbound ID, куда надо добавлять клиентов.</li>
-      <li>Создаёшь клиента один раз — панель создаёт его на выбранных узлах.</li>
-      <li>Общая подписка доступна по ссылке вида <span class="code-inline"><%= baseUrl %>/sub/SLUG</span>.</li>
-    </ol>
-  </section>
+<form method="POST" action="/clients/import">
+  <input type="text" name="node_id" placeholder="ID узла">
+  <button type="submit">Импортировать</button>
+</form>
 
-  <section class="card span-6">
-    <h2>Последние узлы</h2>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>Имя</th><th>Статус</th></tr>
-        </thead>
-        <tbody>
-          <% nodes.forEach(node => { %>
-            <tr>
-              <td><%= node.name %></td>
-              <td>
-                <span class="badge <%= node.last_status || 'unknown' %>"><%= node.last_status || 'unknown' %></span>
-              </td>
-            </tr>
-          <% }) %>
-        </tbody>
-      </table>
-    </div>
-  </section>
+<hr>
 
-  <section class="card span-6">
-    <h2>Последние клиенты</h2>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>Логин</th><th>Подписка</th></tr>
-        </thead>
-        <tbody>
-          <% clients.forEach(client => { %>
-            <tr>
-              <td><a href="/clients/<%= client.id %>"><%= client.display_name %></a></td>
-              <td><a href="<%= baseUrl %>/sub/<%= client.sub_slug %>" target="_blank">Открыть</a></td>
-            </tr>
-          <% }) %>
-        </tbody>
-      </table>
-    </div>
-  </section>
-</div>
+<h2>Список клиентов</h2>
 
-<%- include('partials_footer') %>
+<table border="1" cellpadding="10">
+<tr>
+  <th>ID</th>
+  <th>Логин</th>
+  <th>UUID</th>
+  <th>Подписка</th>
+</tr>
+
+<% clients.forEach(c => { %>
+<tr>
+  <td><%= c.id %></td>
+  <td><%= c.login %></td>
+  <td><%= c.uuid %></td>
+  <td>
+    <a href="<%= baseUrl %>/sub/<%= c.sub_slug %>">
+      <%= baseUrl %>/sub/<%= c.sub_slug %>
+    </a>
+  </td>
+</tr>
+<% }) %>
+
+</table>
+
+</body>
+</html>
