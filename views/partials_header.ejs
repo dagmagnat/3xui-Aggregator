@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= typeof pageTitle !== 'undefined' ? pageTitle : '3xui Aggregator' %> — 3xui Aggregator</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <% const currentPath = typeof activePage !== 'undefined' ? activePage : ''; %>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">3xui-<span>Aggregator</span></div>
+      <nav class="side-nav">
+        <a href="/dashboard" class="<%= currentPath === 'dashboard' ? 'active' : '' %>">Дашборд</a>
+        <a href="/nodes" class="<%= currentPath === 'nodes' ? 'active' : '' %>">Узлы</a>
+        <a href="/clients" class="<%= currentPath === 'clients' ? 'active' : '' %>">Клиенты</a>
+        <a href="/settings" class="<%= currentPath === 'settings' ? 'active' : '' %>">Настройки</a>
+        <form class="logout-form" method="post" action="/logout">
+          <button type="submit">Выйти</button>
+        </form>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div class="page-intro">
+          <h1><%= typeof pageTitle !== 'undefined' ? pageTitle : '3xui Aggregator' %></h1>
+          <% if (typeof pageSubtitle !== 'undefined' && pageSubtitle) { %>
+            <div class="subtitle"><%= pageSubtitle %></div>
+          <% } %>
+        </div>
+      </div>

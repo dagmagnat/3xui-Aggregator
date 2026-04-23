@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Клиенты</title>
+</head>
+<body style="background:#0b1220;color:white;font-family:sans-serif">
+
+<h2>Импорт клиентов</h2>
+
+<form method="POST" action="/clients/import">
+  <input type="text" name="node_id" placeholder="ID узла">
+  <button type="submit">Импортировать</button>
+</form>
+
+<hr>
+
+<h2>Список клиентов</h2>
+
+<table border="1" cellpadding="10">
+<tr>
+  <th>ID</th>
+  <th>Логин</th>
+  <th>UUID</th>
+  <th>Подписка</th>
+</tr>
+
+<% clients.forEach(c => { %>
+<tr>
+  <td><%= c.id %></td>
+  <td><%= c.login %></td>
+  <td><%= c.uuid %></td>
+  <td>
+    <a href="<%= baseUrl %>/sub/<%= c.sub_slug %>">
+      <%= baseUrl %>/sub/<%= c.sub_slug %>
+    </a>
+  </td>
+</tr>
+<% }) %>
+
+</table>
+
+</body>
+</html>
