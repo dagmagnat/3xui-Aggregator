@@ -43,7 +43,7 @@ const db = new Database('./data/app.db');
 const PORT = Number(process.env.PORT || 3000);
 const APP_SECRET = process.env.APP_SECRET || 'change-me';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'change-session-secret';
-const PUBLIC_SUB_URL = process.env.SUB_PUBLIC_URL || process.env.BASE_URL || `http://localhost:${PORT}`;
+const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 const DEFAULT_SUBSCRIPTION_NAME = process.env.SUBSCRIPTION_NAME || 'VPN';
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
@@ -595,7 +595,7 @@ app.get('/dashboard', requireAuth, (req, res) => {
   const nodes = db.prepare('SELECT * FROM nodes ORDER BY id DESC').all();
   const clients = db.prepare('SELECT * FROM clients ORDER BY id DESC LIMIT 10').all();
 
-  render(res, 'dashboard', { stats, nodes, clients, baseUrl: PUBLIC_SUB_URL });
+  render(res, 'dashboard', { stats, nodes, clients, baseUrl: BASE_URL });
 });
 
 app.get('/settings', requireAuth, (req, res) => {
@@ -780,7 +780,7 @@ app.get('/clients', requireAuth, (req, res) => {
     nodes,
     message: req.query.message || '',
     error: req.query.error || '',
-    baseUrl: PUBLIC_SUB_URL
+    baseUrl: BASE_URL
   });
 });
 
@@ -1133,7 +1133,7 @@ app.get('/clients/:id', requireAuth, async (req, res) => {
     client,
     mappings,
     subscription: lines.join('\n'),
-    baseUrl: PUBLIC_SUB_URL,
+    baseUrl: BASE_URL,
     sourceSubUrl,
     nodes
   });
