@@ -1,32 +1,47 @@
-<%- include('partials_header') %>
-
-<h1>Настройки</h1>
+<%- include('partials_header', { pageTitle: 'Настройки', pageSubtitle: 'Параметры общей подписки агрегатора', activePage: 'settings' }) %>
 
 <% if (message) { %><div class="alert ok"><%= message %></div><% } %>
 <% if (error) { %><div class="alert err"><%= error %></div><% } %>
 
-<div class="row">
-  <div class="card">
+<div class="grid">
+  <section class="card span-6">
     <h2>Общие настройки</h2>
     <form method="post" action="/settings">
-      <label>Название подписки</label>
-      <input
-        name="subscription_name"
-        value="<%= subscriptionName %>"
-        placeholder="My VPN"
-        required
-      />
+      <div class="form-grid">
+        <div class="field">
+          <label>Название подписки</label>
+          <input
+            name="subscription_name"
+            value="<%= subscriptionName %>"
+            placeholder="My VPN"
+            required
+          />
+        </div>
+      </div>
 
-      <button type="submit">Сохранить</button>
+      <div class="actions">
+        <button type="submit">Сохранить</button>
+      </div>
     </form>
-  </div>
+  </section>
 
-  <div class="card">
+  <section class="card span-6">
     <h2>Что это меняет</h2>
-    <p>Это имя используется в общей подписке агрегатора.</p>
-    <p>Тебе больше не нужно менять SUBSCRIPTION_NAME вручную в .env.</p>
-    <p>После сохранения новые открытия подписки будут использовать новое имя.</p>
-  </div>
+    <div class="kv-list">
+      <div class="kv-item">
+        <strong>Имя подписки</strong>
+        <div class="muted">Это имя используется в общей подписке агрегатора.</div>
+      </div>
+      <div class="kv-item">
+        <strong>Без правки .env</strong>
+        <div class="muted">Тебе больше не нужно менять SUBSCRIPTION_NAME вручную в .env.</div>
+      </div>
+      <div class="kv-item">
+        <strong>Новые открытия</strong>
+        <div class="muted">После сохранения новые открытия подписки будут использовать новое имя.</div>
+      </div>
+    </div>
+  </section>
 </div>
 
 <%- include('partials_footer') %>

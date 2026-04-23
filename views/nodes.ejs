@@ -1,6 +1,4 @@
-<%- include('partials_header') %>
-
-<h1>Узлы</h1>
+<%- include('partials_header', { pageTitle: 'Узлы', pageSubtitle: 'Добавление, проверка и управление 3x-ui узлами', activePage: 'nodes' }) %>
 
 <% if (message) { %>
   <div class="alert ok"><%= message %></div>
@@ -10,106 +8,131 @@
   <div class="alert err"><%= error %></div>
 <% } %>
 
-<div class="row">
-  <div class="card">
+<div class="grid">
+  <section class="card span-6">
     <h2>Добавить узел</h2>
     <form method="post" action="/nodes">
-      <label>Страна</label>
-      <select name="country_code" required>
-        <option value="">Выбери страну</option>
-        <% countries.forEach(country => { %>
-          <option value="<%= country.code %>"><%= country.flag %> <%= country.name_ru %></option>
-        <% }) %>
-      </select>
+      <div class="form-grid">
+        <div class="field">
+          <label>Страна</label>
+          <select name="country_code" required>
+            <option value="">Выбери страну</option>
+            <% countries.forEach(country => { %>
+              <option value="<%= country.code %>"><%= country.flag %> <%= country.name_ru %></option>
+            <% }) %>
+          </select>
+        </div>
 
-      <label>Panel URL</label>
-      <input name="panel_url" placeholder="https://panel.example.com:2053" required />
+        <div class="field">
+          <label>Panel URL</label>
+          <input name="panel_url" placeholder="https://panel.example.com:2053" required />
+        </div>
 
-      <label>Panel Path</label>
-      <input name="panel_path" placeholder="/qwerty123" />
+        <div class="field">
+          <label>Panel Path</label>
+          <input name="panel_path" placeholder="/qwerty123" />
+        </div>
 
-      <label>SUB Base URL</label>
-      <input name="sub_base_url" placeholder="https://fin.amoredd.ru:5228" />
-      <small>Сюда укажи реальный внешний адрес подписок именно этого узла. Для главного сервера у тебя это, например, https://fin.amoredd.ru:5228</small>
+        <div class="field">
+          <label>SUB Base URL</label>
+          <input name="sub_base_url" placeholder="https://fin.amoredd.ru:5228" />
+          <small class="hint">Сюда укажи реальный внешний адрес подписок именно этого узла. Для главного сервера это, например, https://fin.amoredd.ru:5228.</small>
+        </div>
 
-      <label>Логин панели</label>
-      <input name="username" placeholder="admin" required />
+        <div class="field half">
+          <label>Логин панели</label>
+          <input name="username" placeholder="admin" required />
+        </div>
 
-      <label>Пароль панели</label>
-      <input name="password" type="password" required />
+        <div class="field half">
+          <label>Пароль панели</label>
+          <input name="password" type="password" required />
+        </div>
 
-      <label>Inbound ID</label>
-      <input name="inbound_id" type="number" min="1" placeholder="1" required />
+        <div class="field half">
+          <label>Inbound ID</label>
+          <input name="inbound_id" type="number" min="1" placeholder="1" required />
+        </div>
+      </div>
 
-      <button type="submit">Добавить узел</button>
+      <div class="actions">
+        <button type="submit">Добавить узел</button>
+      </div>
     </form>
-  </div>
+  </section>
 
-  <div class="card">
+  <section class="card span-6">
     <h2>Подсказка</h2>
-    <p>Panel URL — это адрес панели 3x-ui, включая порт, если он используется.</p>
-    <p>Panel Path — секретный путь панели, если он включён. Если пути нет, оставь поле пустым.</p>
-    <p>SUB Base URL — реальный адрес, по которому открываются подписки этого узла. Именно он нужен для корректного импорта старых клиентов.</p>
-    <p>Inbound ID — это inbound, куда агрегатор будет добавлять клиентов на этом узле.</p>
-  </div>
-</div>
+    <div class="kv-list">
+      <div class="kv-item">
+        <strong>Panel URL</strong>
+        <div class="muted">Это адрес панели 3x-ui, включая порт, если он используется.</div>
+      </div>
+      <div class="kv-item">
+        <strong>Panel Path</strong>
+        <div class="muted">Секретный путь панели, если он включён. Если пути нет, оставь поле пустым.</div>
+      </div>
+      <div class="kv-item">
+        <strong>SUB Base URL</strong>
+        <div class="muted">Реальный адрес, по которому открываются подписки этого узла. Он нужен для корректного импорта старых клиентов.</div>
+      </div>
+      <div class="kv-item">
+        <strong>Inbound ID</strong>
+        <div class="muted">Inbound, куда агрегатор будет добавлять клиентов на этом узле.</div>
+      </div>
+    </div>
+  </section>
 
-<div class="card">
-  <h2>Список узлов</h2>
+  <section class="card span-12">
+    <h2>Список узлов</h2>
 
-  <% if (!nodes.length) { %>
-    <p>Пока нет добавленных узлов.</p>
-  <% } else { %>
-    <table>
-      <tr>
-        <th>ID</th>
-        <th>Страна</th>
-        <th>Panel URL</th>
-        <th>SUB Base URL</th>
-        <th>Path</th>
-        <th>Inbound</th>
-        <th>Статус</th>
-        <th>Ошибка</th>
-        <th>Действия</th>
-      </tr>
-
-      <% nodes.forEach(node => { %>
-        <tr>
-          <td><%= node.id %></td>
-          <td><%= node.country_flag || '' %> <%= node.country_name_ru || node.name %></td>
-          <td><%= node.panel_url %></td>
-          <td><%= node.sub_base_url || '-' %></td>
-          <td><%= node.panel_path || '-' %></td>
-          <td><%= node.inbound_id %></td>
-          <td>
-            <% if (node.last_status === 'online') { %>
-              <span style="color:#16a34a;">online</span>
-            <% } else if (node.last_status === 'offline') { %>
-              <span style="color:#dc2626;">offline</span>
-            <% } else { %>
-              <span>unknown</span>
-            <% } %>
-          </td>
-          <td style="max-width:280px; word-break:break-word;">
-            <%= node.last_error || '-' %>
-          </td>
-          <td>
-            <div style="display:flex; gap:8px; flex-wrap:wrap;">
-              <form method="post" action="/nodes/<%= node.id %>/check">
-                <button type="submit" style="width:auto">Проверить</button>
-              </form>
-
-              <a href="/nodes/<%= node.id %>/edit" class="link-btn" style="display:inline-flex; align-items:center;">Изменить</a>
-
-              <form method="post" action="/nodes/<%= node.id %>/delete" onsubmit="return confirm('Удалить узел?')">
-                <button type="submit" class="danger" style="width:auto">Удалить</button>
-              </form>
-            </div>
-          </td>
-        </tr>
-      <% }) %>
-    </table>
-  <% } %>
+    <% if (!nodes.length) { %>
+      <p class="muted">Пока нет добавленных узлов.</p>
+    <% } else { %>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Страна</th>
+              <th>Panel URL</th>
+              <th>SUB Base URL</th>
+              <th>Path</th>
+              <th>Inbound</th>
+              <th>Статус</th>
+              <th>Ошибка</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% nodes.forEach(node => { %>
+              <tr>
+                <td><%= node.id %></td>
+                <td><%= node.country_flag || '' %> <%= node.country_name_ru || node.name %></td>
+                <td class="mono"><%= node.panel_url %></td>
+                <td class="mono"><%= node.sub_base_url || '-' %></td>
+                <td class="mono"><%= node.panel_path || '-' %></td>
+                <td><%= node.inbound_id %></td>
+                <td><span class="badge <%= node.last_status || 'unknown' %>"><%= node.last_status || 'unknown' %></span></td>
+                <td style="max-width:280px; word-break:break-word;"><%= node.last_error || '-' %></td>
+                <td>
+                  <div class="actions">
+                    <form method="post" action="/nodes/<%= node.id %>/check" class="inline-form">
+                      <button type="submit" class="secondary">Проверить</button>
+                    </form>
+                    <a href="/nodes/<%= node.id %>/edit" class="link-btn secondary">Изменить</a>
+                    <form method="post" action="/nodes/<%= node.id %>/delete" class="inline-form" onsubmit="return confirm('Удалить узел?')">
+                      <button type="submit" class="danger">Удалить</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </section>
 </div>
 
 <%- include('partials_footer') %>
