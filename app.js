@@ -44,7 +44,7 @@ const PORT = Number(process.env.PORT || 3000);
 const APP_SECRET = process.env.APP_SECRET || 'change-me';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'change-session-secret';
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
-const PUBLIC_APP_URL = String(process.env.PUBLIC_APP_URL || process.env.AGGREGATOR_PUBLIC_URL || BASE_URL).trim().replace(/\/$/, '');
+const PUBLIC_APP_URL = (process.env.PUBLIC_APP_URL || BASE_URL).replace(/\/$/, '');
 const DEFAULT_SUBSCRIPTION_NAME = process.env.SUBSCRIPTION_NAME || 'VPN';
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
@@ -556,84 +556,6 @@ async function importClientsFromNode(node) {
   });
 }
 
-function normalizeSlug(value, fallback = '') {
-  const normalized = String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '');
-  return normalized || fallback;
-}
-
-function makeAggregateSubscriptionUrl(subSlug) {
-  return `${PUBLIC_APP_URL}/sub/${subSlug}`;
-}
-
-function pickSharedSubId(preferred = '') {
-  return normalizeSlug(preferred, randomUUID().replace(/-/g, '').slice(0, 16));
-}
-
-async function ensureClientOnNode(node, clientRow, remoteClient, preferredEmail = '') {
-  const existingMap = db.prepare(`
-    SELECT * FROM client_nodes
-    WHERE client_id = ? AND node_id = ?
-  `).get(clientRow.id, node.id);
-
-  let inbound;
-  let settings;
-  let stream;
-
-  try {
-    inbound = await getInbound(node);
-    settings = safeParseJsonField(inbound.settings, {});
-    stream = safeParseJsonField(inbound.streamSettings, {});
-  } catch (err) {
-    throw new Error(`Не удалось получить inbound узла ${node.id}: ${err.message}`);
-  }
-
-  const sharedSubId = pickSharedSubId(remoteClient?.subId || clientRow.sub_slug);
-  const clientEmail = preferredEmail || remoteClient?.email || `${clientRow.login}@${node.name}`.replace(/\s+/g, '_');
-  const clientPayload = {
-    id: Number(node.inbound_id),
-    settings: JSON.stringify({
-      clients: [{
-        id: clientRow.uuid,
-        email: clientEmail,
-        flow: remoteClient?.flow || settings.clients?.[0]?.flow || '',
-        limitIp: remoteClient?.limitIp || 1,
-        totalGB: 0,
-        expiryTime: remoteClient?.expiryTime || 0,
-        enable: remoteClient?.enable !== false,
-        tgId: remoteClient?.tgId || '',
-        subId: sharedSubId,
-        reset: remoteClient?.reset || 0
-      }]
-    })
-  };
-
-  if (!existingMap) {
-    await addClient(node, clientPayload);
-  }
-
-  let subUrl = '';
-  if (remoteClient?.originalSub && String(remoteClient.originalSub).startsWith('http') && node.id === remoteClient.source_node_id) {
-    subUrl = remoteClient.originalSub;
-  } else if (inbound.protocol === 'vless' && stream.security === 'reality') {
-    const cleanCountryName = `${node.country_name_ru || node.name}`.trim();
-    const nodeLabel = `${getCountryFlag(cleanCountryName)} ${cleanCountryName}`.trim();
-    subUrl = buildVlessRealityLink(node, inbound, clientRow.uuid, clientRow.display_name, nodeLabel);
-  }
-
-  if (existingMap) {
-    db.prepare(`
-      UPDATE client_nodes
-      SET remote_email = ?, remote_uuid = ?, remote_sub_url = ?
-      WHERE id = ?
-    `).run(clientEmail, clientRow.uuid, subUrl || existingMap.remote_sub_url || '', existingMap.id);
-  } else {
-    db.prepare(`
-      INSERT INTO client_nodes (client_id, node_id, remote_email, remote_uuid, remote_sub_url)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(clientRow.id, node.id, clientEmail, clientRow.uuid, subUrl);
-  }
-}
-
 async function getClientConfigFromNode(node, clientUuid, clientEmail) {
   const inbound = await getInbound(node);
   const settings = safeParseJsonField(inbound.settings, {});
@@ -881,7 +803,7 @@ app.post('/clients', requireAuth, async (req, res) => {
       : 0;
 
     const uuid = randomUUID();
-    const subSlug = pickSharedSubId();
+    const subSlug = randomUUID().replace(/-/g, '');
 
     const clientInfo = db.prepare(`
       INSERT INTO clients (login, display_name, uuid, sub_slug)
@@ -889,26 +811,50 @@ app.post('/clients', requireAuth, async (req, res) => {
     `).run(cleanLogin, cleanDisplayName, uuid, subSlug);
 
     const clientId = clientInfo.lastInsertRowid;
-    const clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
-    const templateClient = {
-      uuid,
-      email: cleanLogin,
-      limitIp: cleanLimitIp,
-      expiryTime,
-      flow: '',
-      enable: true,
-      subId: subSlug,
-      tgId: '',
-      reset: 0
-    };
 
     for (const nodeIdRaw of nodeIds) {
       const nodeId = Number(nodeIdRaw);
       const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId);
       if (!node) throw new Error(`Узел ${nodeId} не найден`);
 
+      const inbound = await getInbound(node);
+      const settings = safeParseJsonField(inbound.settings, {});
+      const stream = safeParseJsonField(inbound.streamSettings, {});
+
       const clientEmail = `${cleanLogin}@${node.name}`.replace(/\s+/g, '_');
-      await ensureClientOnNode(node, clientRow, templateClient, clientEmail);
+      const subId = randomUUID().replace(/-/g, '').slice(0, 16);
+
+      const clientPayload = {
+        id: Number(node.inbound_id),
+        settings: JSON.stringify({
+          clients: [{
+            id: uuid,
+            email: clientEmail,
+            flow: settings.clients?.[0]?.flow || '',
+            limitIp: cleanLimitIp,
+            totalGB: 0,
+            expiryTime,
+            enable: true,
+            tgId: '',
+            subId,
+            reset: 0
+          }]
+        })
+      };
+
+      await addClient(node, clientPayload);
+
+      let subUrl = '';
+      if (inbound.protocol === 'vless' && stream.security === 'reality') {
+        const cleanCountryName = `${node.country_name_ru || node.name}`.trim();
+        const nodeLabel = `${getCountryFlag(cleanCountryName)} ${cleanCountryName}`.trim();
+        subUrl = buildVlessRealityLink(node, inbound, uuid, cleanDisplayName, nodeLabel);
+      }
+
+      db.prepare(`
+        INSERT INTO client_nodes (client_id, node_id, remote_email, remote_uuid, remote_sub_url)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(clientId, node.id, clientEmail, uuid, subUrl);
     }
 
     res.redirect('/clients?message=' + encodeURIComponent('Клиент создан на выбранных узлах'));
@@ -931,38 +877,91 @@ app.post('/clients/import', requireAuth, async (req, res) => {
 
     for (const rc of remoteClients) {
       const existingClient = db.prepare('SELECT * FROM clients WHERE uuid = ?').get(rc.uuid);
+
+      let clientId;
       let clientRow;
 
       if (existingClient) {
-        const desiredSlug = pickSharedSubId(rc.subId || existingClient.sub_slug);
-        if (existingClient.sub_slug !== desiredSlug) {
-          db.prepare('UPDATE clients SET sub_slug = ? WHERE id = ?').run(desiredSlug, existingClient.id);
-          clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(existingClient.id);
-        } else {
-          clientRow = existingClient;
-        }
+        clientId = existingClient.id;
+        clientRow = existingClient;
       } else {
-        const subSlug = pickSharedSubId(rc.subId);
+        const subSlug = (rc.subId || randomUUID().replace(/-/g, '')).trim();
         const displayName = rc.email;
         const login = rc.email;
+
         const clientInfo = db.prepare(`
           INSERT INTO clients (login, display_name, uuid, sub_slug)
           VALUES (?, ?, ?, ?)
         `).run(login, displayName, rc.uuid, subSlug);
-        clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientInfo.lastInsertRowid);
+
+        clientId = clientInfo.lastInsertRowid;
+        clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
       }
 
-      const remoteClient = { ...rc, source_node_id: sourceNode.id, subId: pickSharedSubId(rc.subId || clientRow.sub_slug) };
-
       for (const node of allNodes) {
-        const clientEmail = node.id === sourceNode.id
-          ? rc.email
-          : `${clientRow.login}@${node.name}`.replace(/\s+/g, '_');
+        const alreadyExists = db.prepare(`
+          SELECT id FROM client_nodes
+          WHERE client_id = ? AND node_id = ?
+        `).get(clientId, node.id);
+
+        if (alreadyExists) continue;
+
+        let inbound;
+        let settings;
+        let stream;
+
         try {
-          await ensureClientOnNode(node, clientRow, remoteClient, clientEmail);
+          inbound = await getInbound(node);
+          settings = safeParseJsonField(inbound.settings, {});
+          stream = safeParseJsonField(inbound.streamSettings, {});
         } catch (err) {
-          console.error(`Не удалось синхронизировать клиента ${clientRow.uuid} на узел ${node.id}:`, err.message);
+          console.error(`Не удалось получить inbound узла ${node.id}:`, err.message);
+          continue;
         }
+
+        const clientEmail =
+          node.id === sourceNode.id
+            ? rc.email
+            : `${clientRow.login}@${node.name}`.replace(/\s+/g, '_');
+
+        if (node.id !== sourceNode.id) {
+          const payload = {
+            id: Number(node.inbound_id),
+            settings: JSON.stringify({
+              clients: [{
+                id: clientRow.uuid,
+                email: clientEmail,
+                flow: rc.flow || settings.clients?.[0]?.flow || '',
+                limitIp: rc.limitIp || 1,
+                totalGB: 0,
+                expiryTime: rc.expiryTime || 0,
+                enable: rc.enable !== false,
+                tgId: rc.tgId || '',
+                subId: rc.subId || randomUUID().replace(/-/g, '').slice(0, 16),
+                reset: rc.reset || 0
+              }]
+            })
+          };
+
+          try {
+            await addClient(node, payload);
+          } catch (err) {
+            console.error(`Не удалось добавить клиента на узел ${node.id}:`, err.message);
+            continue;
+          }
+        }
+
+        let subUrl = node.id === sourceNode.id ? (rc.originalSub || '') : '';
+        if (!subUrl && inbound.protocol === 'vless' && stream.security === 'reality') {
+          const cleanCountryName = `${node.country_name_ru || node.name}`.trim();
+          const nodeLabel = `${getCountryFlag(cleanCountryName)} ${cleanCountryName}`.trim();
+          subUrl = buildVlessRealityLink(node, inbound, clientRow.uuid, clientRow.display_name, nodeLabel);
+        }
+
+        db.prepare(`
+          INSERT INTO client_nodes (client_id, node_id, remote_email, remote_uuid, remote_sub_url)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(clientId, node.id, clientEmail, clientRow.uuid, subUrl);
       }
 
       imported++;
@@ -980,44 +979,51 @@ app.post('/clients/refresh-subscriptions', requireAuth, async (req, res) => {
     const sourceNode = db.prepare('SELECT * FROM nodes WHERE id = ?').get(sourceNodeId);
     if (!sourceNode) throw new Error('Узел не найден');
 
-    const allNodes = db.prepare('SELECT * FROM nodes WHERE enabled = 1 ORDER BY id ASC').all();
     const remoteClients = await importClientsFromNode(sourceNode);
+    const remoteByUuid = new Map(remoteClients.map(rc => [rc.uuid, rc]));
+    const remoteByEmail = new Map(remoteClients.map(rc => [rc.email, rc]));
+
+    const clients = db.prepare('SELECT * FROM clients ORDER BY id ASC').all();
     let updated = 0;
 
-    for (const rc of remoteClients) {
-      let clientRow = db.prepare('SELECT * FROM clients WHERE uuid = ?').get(rc.uuid);
-      if (!clientRow) {
-        const clientInfo = db.prepare(`
-          INSERT INTO clients (login, display_name, uuid, sub_slug)
-          VALUES (?, ?, ?, ?)
-        `).run(rc.email, rc.email, rc.uuid, pickSharedSubId(rc.subId));
-        clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientInfo.lastInsertRowid);
+    for (const client of clients) {
+      const rc =
+        remoteByUuid.get(client.uuid) ||
+        remoteByEmail.get(client.login) ||
+        remoteByEmail.get(client.display_name);
+
+      if (!rc) continue;
+
+      const mappings = db.prepare(`
+        SELECT cn.*, n.*
+        FROM client_nodes cn
+        JOIN nodes n ON n.id = cn.node_id
+        WHERE cn.client_id = ?
+        ORDER BY cn.id ASC
+      `).all(client.id);
+
+      const sourceMapping = mappings.find(m => m.node_id === sourceNode.id);
+      const sourceSubUrl = rc.originalSub || (rc.subId ? `${normalizeSubscriptionBaseUrl(sourceNode)}/sub/${rc.subId}` : '');
+
+      if (sourceMapping && sourceSubUrl && sourceMapping.remote_sub_url !== sourceSubUrl) {
+        db.prepare(`
+          UPDATE client_nodes
+          SET remote_sub_url = ?, remote_email = ?, remote_uuid = ?
+          WHERE id = ?
+        `).run(sourceSubUrl, rc.email, rc.uuid, sourceMapping.id);
         updated++;
-      } else {
-        const desiredSlug = pickSharedSubId(rc.subId || clientRow.sub_slug);
-        if (clientRow.sub_slug !== desiredSlug) {
-          db.prepare('UPDATE clients SET sub_slug = ? WHERE id = ?').run(desiredSlug, clientRow.id);
-          clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientRow.id);
-          updated++;
-        }
       }
 
-      const remoteClient = { ...rc, source_node_id: sourceNode.id, subId: pickSharedSubId(rc.subId || clientRow.sub_slug) };
-
-      for (const node of allNodes) {
-        const clientEmail = node.id === sourceNode.id
-          ? rc.email
-          : `${clientRow.login}@${node.name}`.replace(/\s+/g, '_');
-        try {
-          await ensureClientOnNode(node, clientRow, remoteClient, clientEmail);
-          updated++;
-        } catch (err) {
-          console.error(`Не удалось обновить клиента ${clientRow.uuid} на узле ${node.id}:`, err.message);
-        }
+      if (!sourceMapping) {
+        db.prepare(`
+          INSERT INTO client_nodes (client_id, node_id, remote_email, remote_uuid, remote_sub_url)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(client.id, sourceNode.id, rc.email, rc.uuid, sourceSubUrl);
+        updated++;
       }
     }
 
-    res.redirect('/clients?message=' + encodeURIComponent(`Синхронизация завершена, операций: ${updated}`));
+    res.redirect('/clients?message=' + encodeURIComponent(`Подписки обновлены: ${updated}`));
   } catch (err) {
     res.redirect('/clients?error=' + encodeURIComponent(String(err.message || err)));
   }
@@ -1066,7 +1072,7 @@ app.post('/clients/:id/sync', requireAuth, async (req, res) => {
       const stream = safeParseJsonField(inbound.streamSettings, {});
 
       const clientEmail = sourceMap.remote_email;
-      const subId = pickSharedSubId(clientCfg?.subId || client.sub_slug);
+      const subId = clientCfg?.subId || randomUUID().replace(/-/g, '').slice(0, 16);
 
       const payload = {
         id: Number(node.inbound_id),
