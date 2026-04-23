@@ -1,0 +1,85 @@
+<%- include('partials_header', { pageTitle: 'Редактировать узел', pageSubtitle: 'Изменение параметров подключения и подписки узла', activePage: 'nodes' }) %>
+
+<% if (message) { %>
+  <div class="alert ok"><%= message %></div>
+<% } %>
+
+<% if (error) { %>
+  <div class="alert err"><%= error %></div>
+<% } %>
+
+<div class="grid">
+  <section class="card span-8">
+    <h2>Параметры узла</h2>
+    <form method="post" action="/nodes/<%= node.id %>/edit">
+      <div class="form-grid">
+        <div class="field">
+          <label>Страна</label>
+          <select name="country_code" required>
+            <% countries.forEach(country => { %>
+              <option value="<%= country.code %>" <%= country.code === node.country_code ? 'selected' : '' %>>
+                <%= country.flag %> <%= country.name_ru %>
+              </option>
+            <% }) %>
+          </select>
+        </div>
+
+        <div class="field half">
+          <label>Panel URL</label>
+          <input name="panel_url" value="<%= node.panel_url %>" required />
+        </div>
+
+        <div class="field half">
+          <label>Panel Path</label>
+          <input name="panel_path" value="<%= node.panel_path || '' %>" />
+        </div>
+
+        <div class="field">
+          <label>SUB Base URL</label>
+          <input name="sub_base_url" value="<%= node.sub_base_url || '' %>" placeholder="https://fin.amoredd.ru:5228" />
+          <small class="hint">Для главного узла укажи точный внешний адрес подписок, включая нестандартный порт.</small>
+        </div>
+
+        <div class="field half">
+          <label>Логин панели</label>
+          <input name="username" value="<%= node.username %>" required />
+        </div>
+
+        <div class="field half">
+          <label>Новый пароль панели</label>
+          <input name="password" type="password" placeholder="Оставь пустым, чтобы не менять" />
+        </div>
+
+        <div class="field half">
+          <label>Inbound ID</label>
+          <input name="inbound_id" type="number" min="1" value="<%= node.inbound_id %>" required />
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="submit">Сохранить</button>
+        <a href="/nodes" class="link-btn secondary">Назад</a>
+      </div>
+    </form>
+  </section>
+
+  <section class="card span-4">
+    <h2>Что меняется</h2>
+    <div class="kv-list">
+      <div class="kv-item">
+        <strong>Panel URL и Path</strong>
+        <div class="muted">Используются для входа в 3x-ui и API-вызовов.</div>
+      </div>
+      <div class="kv-item">
+        <strong>SUB Base URL</strong>
+        <div class="muted">Используется для импорта и привязки подписок именно к этому узлу.</div>
+      </div>
+      <div class="kv-item">
+        <strong>Inbound ID</strong>
+        <div class="muted">Определяет inbound, куда будут добавляться клиенты на узле.</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<%- include('partials_footer') %>

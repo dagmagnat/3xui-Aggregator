@@ -1,22 +1,17 @@
 {
   "name": "3xui-aggregator-panel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Standalone admin panel to aggregate subscriptions across multiple 3x-ui nodes",
   "main": "app.js",
   "scripts": {
     "start": "node app.js"
   },
   "dependencies": {
-    "3xui-api-client": "^2.1.1",
-    "better-sqlite3": "^11.10.0",
-    "bcryptjs": "^2.4.3",
+    "axios": "^1.7.7",
     "body-parser": "^1.20.3",
-    "connect-sqlite3": "^0.9.15",
-    "dotenv": "^16.4.7",
     "ejs": "^3.1.10",
     "express": "^4.21.2",
-    "express-session": "^1.18.1",
-    "node-fetch": "^2.7.0",
-    "uuid": "^11.1.0"
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
   }
 }
