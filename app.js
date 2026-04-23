@@ -1,9 +1,9 @@
-import express from 'express';
-import bodyParser from 'body-parser';
-import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
-import axios from 'axios';
-import { randomUUID } from 'crypto';
+const express = require('express');
+const bodyParser = require('body-parser');
+const sqlite3 = require('sqlite3');
+const { open } = require('sqlite');
+const axios = require('axios');
+const { randomUUID } = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -104,7 +104,7 @@ app.post('/clients/import', async (req, res) => {
   const node = await db.get(`SELECT * FROM nodes WHERE id = ?`, req.body.node_id);
   if (!node) return res.redirect('/');
 
-  const count = await importClientsFromNode(node);
+  await importClientsFromNode(node);
 
   res.redirect('/');
 });
@@ -117,7 +117,6 @@ app.get('/sub/:slug', async (req, res) => {
 
   if (!client) return res.send('Not found');
 
-  // пока отдаём заглушку (будет дополняться)
   res.setHeader('Content-Type', 'text/plain');
   res.send(`# subscription for ${client.login}`);
 });
