@@ -29,7 +29,7 @@
         <% nodes.forEach(node => { %>
           <label>
             <input class="inline" type="checkbox" name="node_ids" value="<%= node.id %>" />
-            <%= node.country_name_ru || node.name %> (inbound <%= node.inbound_id %>)
+            <%= node.country_flag || '' %> <%= node.country_name_ru || node.name %> (inbound <%= node.inbound_id %>)
           </label>
         <% }) %>
       </div>
@@ -39,13 +39,14 @@
   </div>
 
   <div class="card">
-    <h2>Импорт клиентов из существующей панели</h2>
+    <h2>Импорт и синхронизация</h2>
+
     <form method="post" action="/clients/import">
-      <label>Узел-источник</label>
+      <label>Основной узел-источник</label>
       <select name="node_id" required>
         <% nodes.forEach(node => { %>
           <option value="<%= node.id %>">
-            <%= node.country_name_ru || node.name %> (inbound <%= node.inbound_id %>)
+            <%= node.country_flag || '' %> <%= node.country_name_ru || node.name %> (inbound <%= node.inbound_id %>)
           </option>
         <% }) %>
       </select>
@@ -53,61 +54,120 @@
       <button type="submit">Импортировать клиентов</button>
     </form>
 
+    <form method="post" action="/clients/refresh-subscriptions" style="margin-top:14px;">
+      <label>Узел-источник для обновления</label>
+      <select name="node_id" required>
+        <% nodes.forEach(node => { %>
+          <option value="<%= node.id %>">
+            <%= node.country_flag || '' %> <%= node.country_name_ru || node.name %> (inbound <%= node.inbound_id %>)
+          </option>
+        <% }) %>
+      </select>
+
+      <button type="submit">Синхронизировать подписки</button>
+    </form>
+
     <p style="margin-top:12px;">
-      Импорт берёт клиентов из inbound выбранного узла и добавляет их в агрегатор.
+      Импорт берёт клиентов из выбранного основного узла, сохраняет их <b>UUID</b> и <b>subId</b>, после чего создаёт таких же клиентов на остальных узлах.
     </p>
   </div>
 </div>
 
 <div class="card">
-  <h2>Как выдаётся подписка</h2>
-  <p>После создания или импорта для клиента генерируется один общий URL подписки.</p>
-  <p>Внутри него несколько ссылок конфигураций — по одной на каждый узел.</p>
-  <p>Ссылка остаётся постоянной: ты можешь пересылать её клиенту заново в любой момент.</p>
+  <h2>Массовое удаление</h2>
+
+  <form method="post" action="/clients/delete-all" onsubmit="return confirm('Удалить всех клиентов выбранным способом?')">
+    <label>Режим удаления</label>
+    <select name="delete_mode">
+      <option value="aggregator">Только из агрегатора</option>
+      <option value="secondary">Из агрегатора и вторичных узлов</option>
+      <option value="all">Из агрегатора и всех узлов</option>
+    </select>
+
+    <button class="danger" type="submit">Удалить всех клиентов</button>
+  </form>
 </div>
 
 <div class="card">
   <h2>Все клиенты</h2>
-  <table>
-    <tr>
-      <th>ID</th>
-      <th>Имя</th>
-      <th>Логин</th>
-      <th>Подписка</th>
-      <th>Действия</th>
-    </tr>
 
-    <% clients.forEach(client => { %>
+  <form method="post" action="/clients/bulk-delete" onsubmit="return confirm('Удалить выбранных клиентов?')">
+    <div style="display:flex; gap:12px; align-items:end; flex-wrap:wrap; margin-bottom:14px;">
+      <div>
+        <label>Режим удаления выбранных</label>
+        <select name="delete_mode">
+          <option value="aggregator">Только из агрегатора</option>
+          <option value="secondary">Из агрегатора и вторичных узлов</option>
+          <option value="all">Из агрегатора и всех узлов</option>
+        </select>
+      </div>
+
+      <button class="danger" type="submit" style="width:auto;">Удалить выбранных</button>
+    </div>
+
+    <table>
       <tr>
-        <td><%= client.id %></td>
-        <td>
-          <a href="/clients/<%= client.id %>"><%= client.display_name %></a>
-        </td>
-        <td><%= client.login %></td>
-        <td>
-          <button
-            type="button"
-            class="link-btn"
-            onclick="copySubLink('<%= baseUrl %>/sub/<%= client.sub_slug %>')"
-          >
-            Скопировать
-          </button>
-        </td>
-        <td>
-          <form method="post" action="/clients/<%= client.id %>/delete" onsubmit="return confirm('Удалить клиента со всех узлов?')">
-            <button class="danger" style="width:auto">Удалить</button>
-          </form>
-        </td>
+        <th>
+          <input class="inline" type="checkbox" onclick="toggleAllClients(this)" />
+        </th>
+        <th>ID</th>
+        <th>Имя</th>
+        <th>Логин</th>
+        <th>UUID</th>
+        <th>Подписка</th>
+        <th>JSON</th>
+        <th>Действия</th>
       </tr>
-    <% }) %>
-  </table>
+
+      <% clients.forEach(client => { %>
+        <tr>
+          <td>
+            <input class="inline client-check" type="checkbox" name="client_ids" value="<%= client.id %>" />
+          </td>
+          <td><%= client.id %></td>
+          <td>
+            <a href="/clients/<%= client.id %>"><%= client.display_name %></a>
+          </td>
+          <td><%= client.login %></td>
+          <td><code><%= client.uuid %></code></td>
+          <td>
+            <button
+              type="button"
+              class="link-btn"
+              onclick="copySubLink('<%= baseUrl %>/sub/<%= client.sub_slug %>')"
+            >
+              Скопировать SUB
+            </button>
+          </td>
+          <td>
+            <button
+              type="button"
+              class="link-btn"
+              onclick="copySubLink('<%= baseUrl %>/json/<%= client.sub_slug %>')"
+            >
+              Скопировать JSON
+            </button>
+          </td>
+          <td>
+            <a class="link-btn" href="/clients/<%= client.id %>">Открыть</a>
+          </td>
+        </tr>
+      <% }) %>
+    </table>
+  </form>
 </div>
 
 <script>
 function copySubLink(text) {
   navigator.clipboard.writeText(text)
-    .then(() => alert('Ссылка подписки скопирована'))
+    .then(() => alert('Ссылка скопирована'))
     .catch(() => alert('Не удалось скопировать ссылку'));
+}
+
+function toggleAllClients(source) {
+  document.querySelectorAll('.client-check').forEach(cb => {
+    cb.checked = source.checked;
+  });
 }
 </script>
 
