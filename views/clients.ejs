@@ -1,43 +1,114 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Клиенты</title>
-</head>
-<body style="background:#0b1220;color:white;font-family:sans-serif">
+<%- include('partials_header') %>
 
-<h2>Импорт клиентов</h2>
+<h1>Клиенты</h1>
 
-<form method="POST" action="/clients/import">
-  <input type="text" name="node_id" placeholder="ID узла">
-  <button type="submit">Импортировать</button>
-</form>
+<% if (message) { %>
+  <div class="alert ok"><%= message %></div>
+<% } %>
 
-<hr>
+<% if (error) { %>
+  <div class="alert err"><%= error %></div>
+<% } %>
 
-<h2>Список клиентов</h2>
+<div class="row">
+  <div class="card">
+    <h2>Создать клиента</h2>
+    <form method="post" action="/clients">
+      <label>Логин</label>
+      <input name="login" placeholder="user001" required />
 
-<table border="1" cellpadding="10">
-<tr>
-  <th>ID</th>
-  <th>Логин</th>
-  <th>UUID</th>
-  <th>Подписка</th>
-</tr>
+      <label>Срок в днях</label>
+      <input name="duration_days" type="number" min="0" value="0" />
+      <small>0 = без даты окончания</small>
 
-<% clients.forEach(c => { %>
-<tr>
-  <td><%= c.id %></td>
-  <td><%= c.login %></td>
-  <td><%= c.uuid %></td>
-  <td>
-    <a href="<%= baseUrl %>/sub/<%= c.sub_slug %>">
-      <%= baseUrl %>/sub/<%= c.sub_slug %>
-    </a>
-  </td>
-</tr>
-<% }) %>
+      <label>Лимит IP</label>
+      <input name="limit_ip" type="number" min="1" value="1" required />
 
-</table>
+      <label>На каких узлах создать</label>
+      <div class="checkbox-list">
+        <% nodes.forEach(node => { %>
+          <label>
+            <input class="inline" type="checkbox" name="node_ids" value="<%= node.id %>" />
+            <%= node.country_name_ru || node.name %> (inbound <%= node.inbound_id %>)
+          </label>
+        <% }) %>
+      </div>
 
-</body>
-</html>
+      <button type="submit">Создать клиента на узлах</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Импорт клиентов из существующей панели</h2>
+    <form method="post" action="/clients/import">
+      <label>Узел-источник</label>
+      <select name="node_id" required>
+        <% nodes.forEach(node => { %>
+          <option value="<%= node.id %>">
+            <%= node.country_name_ru || node.name %> (inbound <%= node.inbound_id %>)
+          </option>
+        <% }) %>
+      </select>
+
+      <button type="submit">Импортировать клиентов</button>
+    </form>
+
+    <p style="margin-top:12px;">
+      Импорт берёт клиентов из inbound выбранного узла и добавляет их в агрегатор.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Как выдаётся подписка</h2>
+  <p>После создания или импорта для клиента генерируется один общий URL подписки.</p>
+  <p>Внутри него несколько ссылок конфигураций — по одной на каждый узел.</p>
+  <p>Ссылка остаётся постоянной: ты можешь пересылать её клиенту заново в любой момент.</p>
+</div>
+
+<div class="card">
+  <h2>Все клиенты</h2>
+  <table>
+    <tr>
+      <th>ID</th>
+      <th>Имя</th>
+      <th>Логин</th>
+      <th>Подписка</th>
+      <th>Действия</th>
+    </tr>
+
+    <% clients.forEach(client => { %>
+      <tr>
+        <td><%= client.id %></td>
+        <td>
+          <a href="/clients/<%= client.id %>"><%= client.display_name %></a>
+        </td>
+        <td><%= client.login %></td>
+        <td>
+          <button
+            type="button"
+            class="link-btn"
+            onclick="copySubLink('<%= baseUrl %>/sub/<%= client.sub_slug %>')"
+          >
+            Скопировать
+          </button>
+        </td>
+        <td>
+          <form method="post" action="/clients/<%= client.id %>/delete" onsubmit="return confirm('Удалить клиента со всех узлов?')">
+            <button class="danger" style="width:auto">Удалить</button>
+          </form>
+        </td>
+      </tr>
+    <% }) %>
+  </table>
+</div>
+
+<script>
+function copySubLink(text) {
+  navigator.clipboard.writeText(text)
+    .then(() => alert('Ссылка подписки скопирована'))
+    .catch(() => alert('Не удалось скопировать ссылку'));
+}
+</script>
+
+<%- include('partials_footer') %>
