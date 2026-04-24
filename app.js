@@ -454,16 +454,6 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
     try {
       if (!includeOffline && row.last_status === 'offline') continue;
 
-      if (row.remote_sub_url && row.remote_sub_url.startsWith('http')) {
-        try {
-          const importedLines = await fetchSubscriptionLines(row.remote_sub_url);
-
-          for (const line of importedLines) {
-            if (!seen.has(line)) {
-              seen.add(line);
-              lines.push(line);
-            }
-          }
 
           continue;
         } catch (err) {
@@ -657,7 +647,7 @@ async function syncClientsFromSourceNode(sourceNode) {
       }
 
       const clientEmail = rc.email;
-      let subUrl = buildNativeSubUrl(node, rc.subId);
+      let subUrl = rc.originalSub || buildNativeSubUrl(sourceNode, rc.subId);
 
       if (node.id !== sourceNode.id) {
         let inbound;
@@ -696,8 +686,8 @@ async function syncClientsFromSourceNode(sourceNode) {
           console.error(`Не удалось добавить клиента ${rc.email} на узел ${node.id}:`, err.message);
         }
       } else {
-        subUrl = rc.originalSub || subUrl;
-      }
+  subUrl = rc.originalSub || buildNativeSubUrl(sourceNode, rc.subId);
+}
 
       db.prepare(`
         INSERT OR IGNORE INTO client_nodes (
