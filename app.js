@@ -605,14 +605,24 @@ async function syncClientsFromSourceNode(sourceNode) {
     let clientRow = db.prepare('SELECT * FROM clients WHERE uuid = ?').get(rc.uuid);
 
     if (!clientRow) {
-      const subSlug = rc.subId;
-      const login = makeUniqueLogin(rc.email);
-      const displayName = rc.email;
+      let subSlug = rc.subId || randomUUID().replace(/-/g, '').slice(0, 16);
 
-      const clientInfo = db.prepare(`
-        INSERT INTO clients (login, display_name, uuid, sub_slug)
-        VALUES (?, ?, ?, ?)
-      `).run(login, displayName, rc.uuid, subSlug);
+const slugExists = db.prepare(`
+  SELECT id FROM clients
+  WHERE sub_slug = ?
+`).get(subSlug);
+
+if (slugExists) {
+  subSlug = `${subSlug}-${randomUUID().replace(/-/g, '').slice(0, 6)}`;
+}
+
+const login = makeUniqueLogin(rc.email);
+const displayName = rc.email;
+
+const clientInfo = db.prepare(`
+  INSERT INTO clients (login, display_name, uuid, sub_slug)
+  VALUES (?, ?, ?, ?)
+`).run(login, displayName, rc.uuid, subSlug);
 
       clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientInfo.lastInsertRowid);
       imported++;
