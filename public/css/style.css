@@ -47,6 +47,8 @@ a:hover { color: #b6d6ff; }
   position: sticky;
   top: 0;
   height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .brand {
@@ -116,6 +118,24 @@ a:hover { color: #b6d6ff; }
 }
 
 .logout-form { margin: 0; }
+
+.sidebar-logout {
+  margin-top: auto;
+  padding-top: 18px;
+}
+
+.sidebar-logout button {
+  width: 100%;
+  text-align: center;
+  justify-content: center;
+  background: rgba(255,255,255,.05);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.sidebar-logout button:hover {
+  background: rgba(255,255,255,.09);
+}
 
 .grid {
   display: grid;
@@ -459,6 +479,46 @@ tbody tr:hover { background: rgba(255,255,255,.025); }
   font-size: 12px;
 }
 
+
+/* Login page */
+.login-page {
+  min-height: 100vh;
+}
+
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-card {
+  width: min(100%, 440px);
+  padding: 28px;
+}
+
+.login-brand {
+  font-size: 22px;
+  font-weight: 800;
+  margin-bottom: 20px;
+  letter-spacing: .3px;
+}
+
+.login-brand span {
+  color: #75a7ff;
+}
+
+.login-card h1 {
+  margin: 0 0 22px;
+  font-size: 30px;
+  font-weight: 800;
+}
+
+.login-form button.login-submit {
+  margin-top: 4px;
+}
+
 @media (max-width: 1100px) {
   .layout { grid-template-columns: 1fr; }
   .sidebar {
@@ -466,6 +526,10 @@ tbody tr:hover { background: rgba(255,255,255,.025); }
     height: auto;
     border-right: none;
     border-bottom: 1px solid var(--line);
+  }
+  .sidebar-logout {
+    margin-top: 10px;
+    padding-top: 0;
   }
 }
 
