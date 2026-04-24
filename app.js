@@ -493,11 +493,7 @@ function buildVlessRealityLink(node, inbound, uuid, displayName, nodeName) {
   const host = panelUrl.hostname;
   const port = inbound.port || panelUrl.port || 443;
 
-  const pbk =
-    realityInner?.publicKey ||
-    realitySettings?.publicKey ||
-    '';
-
+  const pbk = realityInner?.publicKey || realitySettings?.publicKey || '';
   const sni =
     realitySettings?.serverNames?.[0] ||
     realityInner?.serverNames?.[0] ||
@@ -516,6 +512,7 @@ function buildVlessRealityLink(node, inbound, uuid, displayName, nodeName) {
     'chrome';
 
   const flow =
+    settings?.clients?.find(c => c.id === uuid)?.flow ||
     settings?.clients?.[0]?.flow ||
     '';
 
@@ -531,7 +528,10 @@ function buildVlessRealityLink(node, inbound, uuid, displayName, nodeName) {
 
   if (flow) query.set('flow', flow);
 
-  const remark = encodeURIComponent(nodeName);
+  const countryName = `${node.country_name_ru || node.name || nodeName || 'Node'}`.trim();
+  const flag = node.country_flag || getCountryFlag(countryName);
+  const remark = encodeURIComponent(`${flag} ${countryName}`.trim());
+
   return `vless://${uuid}@${host}:${port}?${query.toString()}#${remark}`;
 }
 
