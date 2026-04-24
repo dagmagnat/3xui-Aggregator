@@ -134,7 +134,7 @@
             <button
               type="button"
               class="link-btn"
-              onclick="copySubLink('<%= baseUrl %>/sub/<%= client.sub_slug %>')"
+              onclick="copySubLink('<%= client.source_sub_url || baseUrl + '/sub/' + client.sub_slug %>')"
             >
               Скопировать SUB
             </button>
