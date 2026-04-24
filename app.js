@@ -454,13 +454,6 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
     try {
       if (!includeOffline && row.last_status === 'offline') continue;
 
-
-          continue;
-        } catch (err) {
-          console.error('Failed to fetch remote subscription:', row.remote_sub_url, err.message);
-        }
-      }
-
       const inbound = await getInbound(row);
       const stream = safeParseJsonField(inbound.streamSettings, {});
       let subUrl = '';
@@ -481,20 +474,9 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
       if (subUrl && !seen.has(subUrl)) {
         seen.add(subUrl);
         lines.push(subUrl);
-
-        if (!row.remote_sub_url) {
-          db.prepare(`
-            UPDATE client_nodes
-            SET remote_sub_url = ?
-            WHERE id = ?
-          `).run(subUrl, row.client_node_id);
-        }
       }
     } catch (err) {
-      if (includeOffline && row.remote_sub_url && !seen.has(row.remote_sub_url)) {
-        seen.add(row.remote_sub_url);
-        lines.push(row.remote_sub_url);
-      }
+      console.error('Build subscription line failed:', err.message);
     }
   }
 
