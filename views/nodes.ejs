@@ -24,6 +24,12 @@
         </div>
 
         <div class="field">
+          <label>Доп. название узла</label>
+          <input name="label_suffix" placeholder="например: 1, 2, Frankfurt, Hetzner" />
+          <small class="hint">Например: Германия + 1 = 🇩🇪 Германия-1</small>
+        </div>
+
+        <div class="field">
           <label>Panel URL</label>
           <input name="panel_url" placeholder="https://panel.example.com:2053" required />
         </div>
@@ -36,7 +42,7 @@
         <div class="field">
           <label>SUB Base URL</label>
           <input name="sub_base_url" placeholder="https://fin.amoredd.ru:5228" />
-          <small class="hint">Сюда укажи реальный внешний адрес подписок именно этого узла. Для главного сервера это, например, https://fin.amoredd.ru:5228.</small>
+          <small class="hint">Если агрегатор теперь работает на старом адресе подписок, укажи здесь https://fin.amoredd.ru:5228.</small>
         </div>
 
         <div class="field half">
@@ -65,20 +71,20 @@
     <h2>Подсказка</h2>
     <div class="kv-list">
       <div class="kv-item">
-        <strong>Panel URL</strong>
-        <div class="muted">Это адрес панели 3x-ui, включая порт, если он используется.</div>
+        <strong>Доп. название</strong>
+        <div class="muted">Нужно для красивого имени в подписке: Германия-1, Германия-2, Финляндия Hetzner.</div>
       </div>
       <div class="kv-item">
-        <strong>Panel Path</strong>
-        <div class="muted">Секретный путь панели, если он включён. Если пути нет, оставь поле пустым.</div>
+        <strong>Panel URL</strong>
+        <div class="muted">Адрес панели 3x-ui/API, включая порт.</div>
       </div>
       <div class="kv-item">
         <strong>SUB Base URL</strong>
-        <div class="muted">Реальный адрес, по которому открываются подписки этого узла. Он нужен для корректного импорта старых клиентов.</div>
+        <div class="muted">Адрес, который должен использоваться для публичной ссылки подписки.</div>
       </div>
       <div class="kv-item">
         <strong>Inbound ID</strong>
-        <div class="muted">Inbound, куда агрегатор будет добавлять клиентов на этом узле.</div>
+        <div class="muted">Inbound, куда агрегатор будет добавлять клиентов.</div>
       </div>
     </div>
   </section>
@@ -94,7 +100,7 @@
           <thead>
             <tr>
               <th>ID</th>
-              <th>Страна</th>
+              <th>Название</th>
               <th>Panel URL</th>
               <th>SUB Base URL</th>
               <th>Path</th>
@@ -105,10 +111,16 @@
             </tr>
           </thead>
           <tbody>
-            <% nodes.forEach(node => { %>
+            <% nodes.forEach(node => {
+              const suffix = (node.label_suffix || '').trim();
+              const baseName = node.country_name_ru || node.name;
+              const displayName = suffix
+                ? (/^\d+$/.test(suffix) ? `${baseName}-${suffix}` : `${baseName} ${suffix}`)
+                : baseName;
+            %>
               <tr>
                 <td><%= node.id %></td>
-                <td><%= node.country_flag || '' %> <%= node.country_name_ru || node.name %></td>
+                <td><%= node.country_flag || '' %> <%= displayName %></td>
                 <td class="mono"><%= node.panel_url %></td>
                 <td class="mono"><%= node.sub_base_url || '-' %></td>
                 <td class="mono"><%= node.panel_path || '-' %></td>
