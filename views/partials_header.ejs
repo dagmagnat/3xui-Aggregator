@@ -16,10 +16,11 @@
         <a href="/nodes" class="<%= currentPath === 'nodes' ? 'active' : '' %>">Узлы</a>
         <a href="/clients" class="<%= currentPath === 'clients' ? 'active' : '' %>">Клиенты</a>
         <a href="/settings" class="<%= currentPath === 'settings' ? 'active' : '' %>">Настройки</a>
-        <form class="logout-form" method="post" action="/logout">
-          <button type="submit">Выйти</button>
-        </form>
       </nav>
+
+      <form class="logout-form sidebar-logout" method="post" action="/logout">
+        <button type="submit">Выйти</button>
+      </form>
     </aside>
 
     <main class="main">
