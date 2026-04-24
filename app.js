@@ -981,7 +981,20 @@ app.post('/nodes/:id/delete', requireAuth, (req, res) => {
 });
 
 app.get('/clients', requireAuth, (req, res) => {
-  const clients = db.prepare('SELECT * FROM clients ORDER BY id DESC').all();
+  const clients = db.prepare(`
+  SELECT
+    c.*,
+    (
+      SELECT cn.remote_sub_url
+      FROM client_nodes cn
+      WHERE cn.client_id = c.id
+        AND cn.remote_sub_url LIKE 'http%'
+      ORDER BY cn.id ASC
+      LIMIT 1
+    ) AS source_sub_url
+  FROM clients c
+  ORDER BY c.id DESC
+`).all();
   const nodes = db.prepare('SELECT * FROM nodes WHERE enabled = 1 ORDER BY id ASC').all();
 
   render(res, 'clients', {
