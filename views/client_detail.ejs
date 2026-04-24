@@ -4,21 +4,44 @@
 
 <div class="card">
   <p><strong>Логин:</strong> <%= client.login %></p>
-  <p><strong>UUID:</strong> <%= client.uuid %></p>
+  <p><strong>UUID:</strong> <code><%= client.uuid %></code></p>
+  <p><strong>Slug / subId:</strong> <code><%= client.sub_slug %></code></p>
 
   <p>
-    <strong>Общая подписка:</strong><br>
+    <strong>Общая SUB подписка агрегатора:</strong><br>
     <a href="<%= baseUrl %>/sub/<%= client.sub_slug %>" target="_blank">
       <%= baseUrl %>/sub/<%= client.sub_slug %>
     </a>
   </p>
+
+  <p>
+    <strong>JSON подписка агрегатора:</strong><br>
+    <a href="<%= baseUrl %>/json/<%= client.sub_slug %>" target="_blank">
+      <%= baseUrl %>/json/<%= client.sub_slug %>
+    </a>
+  </p>
+
+  <% if (sourceSubUrl) { %>
+    <p>
+      <strong>Исходная подписка с узла:</strong><br>
+      <a href="<%= sourceSubUrl %>" target="_blank"><%= sourceSubUrl %></a>
+    </p>
+  <% } %>
 
   <button
     type="button"
     class="link-btn"
     onclick="copySubLink('<%= baseUrl %>/sub/<%= client.sub_slug %>')"
   >
-    Скопировать подписку
+    Скопировать SUB
+  </button>
+
+  <button
+    type="button"
+    class="link-btn"
+    onclick="copySubLink('<%= baseUrl %>/json/<%= client.sub_slug %>')"
+  >
+    Скопировать JSON
   </button>
 </div>
 
@@ -30,12 +53,27 @@
       <% nodes.forEach(node => { %>
         <label>
           <input class="inline" type="checkbox" name="node_ids" value="<%= node.id %>" />
-          <%= node.country_name_ru || node.name %> (inbound <%= node.inbound_id %>)
+          <%= node.country_flag || '' %> <%= node.country_name_ru || node.name %> (inbound <%= node.inbound_id %>)
         </label>
       <% }) %>
     </div>
 
     <button type="submit" style="margin-top:10px;">Добавить на выбранные узлы</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Удаление клиента</h2>
+
+  <form method="post" action="/clients/<%= client.id %>/delete" onsubmit="return confirm('Удалить клиента выбранным способом?')">
+    <label>Режим удаления</label>
+    <select name="delete_mode">
+      <option value="aggregator">Только из агрегатора</option>
+      <option value="secondary">Из агрегатора и вторичных узлов</option>
+      <option value="all">Из агрегатора и всех узлов</option>
+    </select>
+
+    <button class="danger" type="submit">Удалить клиента</button>
   </form>
 </div>
 
@@ -46,7 +84,8 @@
       <th>Узел</th>
       <th>Статус</th>
       <th>Email в 3x-ui</th>
-      <th>Ссылка</th>
+      <th>UUID</th>
+      <th>Ссылка узла</th>
     </tr>
 
     <% mappings.forEach(row => { %>
@@ -54,9 +93,12 @@
         <td><%= row.node_name %></td>
         <td><span class="badge <%= row.last_status %>"><%= row.last_status %></span></td>
         <td><%= row.remote_email %></td>
+        <td><code><%= row.remote_uuid %></code></td>
         <td>
           <% if (row.remote_sub_url) { %>
-            <pre style="white-space:pre-wrap; word-break:break-word;"><%= row.remote_sub_url %></pre>
+            <a href="<%= row.remote_sub_url %>" target="_blank">
+              <%= row.remote_sub_url %>
+            </a>
           <% } else { %>
             <span>Нет ссылки</span>
           <% } %>
@@ -74,7 +116,7 @@
 <script>
 function copySubLink(text) {
   navigator.clipboard.writeText(text)
-    .then(() => alert('Ссылка подписки скопирована'))
+    .then(() => alert('Ссылка скопирована'))
     .catch(() => alert('Не удалось скопировать ссылку'));
 }
 </script>
