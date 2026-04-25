@@ -1,4 +1,12 @@
 <%- include('partials_header', { pageTitle: 'Узлы', pageSubtitle: 'Добавление, проверка и управление 3x-ui узлами', activePage: 'nodes' }) %>
+<%
+  function flagIcon(code) {
+    const cc = String(code || '').toLowerCase();
+    if (!cc) return '';
+    return '<img class="flag-icon" src="https://flagcdn.com/w20/' + cc + '.png" alt="' + cc.toUpperCase() + '" loading="lazy">';
+  }
+%>
+
 
 <% if (message) { %>
   <div class="alert ok"><%= message %></div>
@@ -18,7 +26,7 @@
           <select name="country_code" required>
             <option value="">Выбери страну</option>
             <% countries.forEach(country => { %>
-              <option value="<%= country.code %>"><%= country.flag %> <%= country.name_ru %></option>
+              <option value="<%= country.code %>"><%= country.flag %> <%= country.code %> <%= country.name_ru %></option>
             <% }) %>
           </select>
         </div>
@@ -113,7 +121,7 @@
             %>
               <tr>
                 <td><%= node.id %></td>
-                <td><%= node.country_flag || '' %> <%= displayName %></td>
+                <td><%- flagIcon(node.country_code) %> <%= displayName %></td>
                 <td class="mono"><%= node.panel_url %></td>
                 <td class="mono"><%= node.panel_path || '-' %></td>
                 <td><%= node.inbound_id %></td>

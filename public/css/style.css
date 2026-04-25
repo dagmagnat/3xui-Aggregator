@@ -544,3 +544,160 @@ tbody tr:hover { background: rgba(255,255,255,.025); }
   }
   .table-wrap { overflow-x: auto; }
 }
+
+/* Added: search, toast, QR modal, public connect page */
+.search-form {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.search-form input {
+  min-width: min(420px, 100%);
+}
+
+.toast {
+  position: fixed;
+  right: 24px;
+  top: 24px;
+  z-index: 9999;
+  background: rgba(24, 195, 126, .95);
+  color: #06111f;
+  font-weight: 800;
+  padding: 12px 16px;
+  border-radius: 14px;
+  transform: translateY(-20px);
+  opacity: 0;
+  pointer-events: none;
+  transition: .2s ease;
+  box-shadow: 0 12px 30px rgba(0,0,0,.25);
+}
+
+.toast.show {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.modal.hidden { display: none; }
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: rgba(0,0,0,.62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-card {
+  width: min(440px, 100%);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 24px;
+  position: relative;
+  text-align: center;
+  box-shadow: 0 24px 70px rgba(0,0,0,.45);
+}
+
+.modal-card img {
+  width: min(320px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  padding: 12px;
+}
+
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  padding: 0;
+  background: rgba(255,255,255,.08);
+}
+
+.public-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.public-card {
+  width: min(520px, 100%);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  padding: 28px;
+  text-align: center;
+  box-shadow: 0 24px 70px rgba(0,0,0,.32);
+}
+
+.qr-box img {
+  width: min(320px, 100%);
+  background: white;
+  border-radius: 16px;
+  padding: 12px;
+  margin: 16px auto;
+}
+
+.public-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 18px 0;
+}
+
+.public-url {
+  display: block;
+  word-break: break-all;
+  white-space: normal;
+  margin-top: 14px;
+}
+
+.checkbox-list .checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.checkbox-list .checkbox-item input[type="checkbox"] {
+  width: auto;
+  min-width: 16px;
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .search-form,
+  .public-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .toast {
+    left: 16px;
+    right: 16px;
+    text-align: center;
+  }
+}
+
+.flag-icon {
+  width: 20px;
+  height: 14px;
+  object-fit: cover;
+  border-radius: 3px;
+  vertical-align: -2px;
+  margin-right: 7px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.14);
+}
+.checkbox-item .flag-icon {
+  margin-right: 6px;
+}

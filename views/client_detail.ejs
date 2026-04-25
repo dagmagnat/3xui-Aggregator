@@ -1,11 +1,22 @@
 <%- include('partials_header') %>
+<%
+  function flagIcon(code) {
+    const cc = String(code || '').toLowerCase();
+    if (!cc) return '';
+    return '<img class="flag-icon" src="https://flagcdn.com/w20/' + cc + '.png" alt="' + cc.toUpperCase() + '" loading="lazy">';
+  }
+%>
+
 
 <h1><%= client.display_name %></h1>
+
+<div id="toast" class="toast">Скопировано</div>
 
 <div class="card">
   <p><strong>Логин:</strong> <%= client.login %></p>
   <p><strong>UUID:</strong> <code><%= client.uuid %></code></p>
   <p><strong>Slug / subId:</strong> <code><%= client.sub_slug %></code></p>
+  <p><strong>Лимит:</strong> <%= client.traffic_gb && client.traffic_gb > 0 ? client.traffic_gb + ' ГБ' : 'без лимита' %> / <%= client.duration_days && client.duration_days > 0 ? client.duration_days + ' дней' : 'без срока' %></p>
 
   <p>
     <strong>Общая SUB подписка агрегатора:</strong><br>
@@ -21,28 +32,10 @@
     </a>
   </p>
 
-  <% if (sourceSubUrl) { %>
-    <p>
-      <strong>Исходная подписка с узла:</strong><br>
-      <a href="<%= sourceSubUrl %>" target="_blank"><%= sourceSubUrl %></a>
-    </p>
-  <% } %>
-
-  <button
-    type="button"
-    class="link-btn"
-    onclick="copySubLink('<%= baseUrl %>/sub/<%= client.sub_slug %>')"
-  >
-    Скопировать SUB
-  </button>
-
-  <button
-    type="button"
-    class="link-btn"
-    onclick="copySubLink('<%= baseUrl %>/json/<%= client.sub_slug %>')"
-  >
-    Скопировать JSON
-  </button>
+  <button type="button" class="link-btn" onclick="copySubLink('<%= baseUrl %>/sub/<%= client.sub_slug %>', this)">Скопировать SUB</button>
+  <button type="button" class="link-btn" onclick="copySubLink('<%= baseUrl %>/json/<%= client.sub_slug %>', this)">Скопировать JSON</button>
+  <button type="button" class="link-btn secondary" onclick="showQr('<%= baseUrl %>/sub/<%= client.sub_slug %>', '<%= client.login %>')">QR SUB</button>
+  <a class="link-btn secondary" href="/open/<%= client.sub_slug %>" target="_blank">Страница подключения</a>
 </div>
 
 <div class="card">
@@ -60,7 +53,7 @@
         <label class="checkbox-item">
           <input type="checkbox" name="node_ids" value="<%= node.id %>" />
           <span class="meta">
-            <strong><%= node.country_flag || '' %> <%= displayName %></strong>
+            <strong><%- flagIcon(node.country_code) %> <%= displayName %></strong>
             <small>inbound <%= node.inbound_id %></small>
           </span>
         </label>
@@ -88,42 +81,42 @@
 
 <div class="card">
   <h2>Узлы клиента</h2>
-  <table>
-    <tr>
-      <th>Узел</th>
-      <th>Статус</th>
-      <th>Email в 3x-ui</th>
-      <th>UUID</th>
-      <th>Ссылка узла</th>
-    </tr>
-
-    <% mappings.forEach(row => { %>
+  <div class="table-wrap">
+    <table>
       <tr>
-        <td>
-          <% 
-            const suffix = (row.label_suffix || '').trim();
-            const baseName = row.country_name_ru || row.node_name;
-            const displayName = suffix
-              ? (/^\d+$/.test(suffix) ? `${baseName}-${suffix}` : `${baseName} ${suffix}`)
-              : baseName;
-          %>
-          <%= row.country_flag || '' %> <%= displayName %>
-        </td>
-        <td><span class="badge <%= row.last_status %>"><%= row.last_status %></span></td>
-        <td><%= row.remote_email %></td>
-        <td><code><%= row.remote_uuid %></code></td>
-        <td>
-          <% if (row.remote_sub_url) { %>
-            <a href="<%= row.remote_sub_url %>" target="_blank">
-              <%= row.remote_sub_url %>
-            </a>
-          <% } else { %>
-            <span>Нет ссылки</span>
-          <% } %>
-        </td>
+        <th>Узел</th>
+        <th>Статус</th>
+        <th>Email в 3x-ui</th>
+        <th>UUID</th>
+        <th>Ссылка узла</th>
       </tr>
-    <% }) %>
-  </table>
+
+      <% mappings.forEach(row => { %>
+        <tr>
+          <td>
+            <% 
+              const suffix = (row.label_suffix || '').trim();
+              const baseName = row.country_name_ru || row.node_name;
+              const displayName = suffix
+                ? (/^\d+$/.test(suffix) ? `${baseName}-${suffix}` : `${baseName} ${suffix}`)
+                : baseName;
+            %>
+            <%- flagIcon(row.country_code) %> <%= displayName %>
+          </td>
+          <td><span class="badge <%= row.last_status %>"><%= row.last_status %></span></td>
+          <td><%= row.remote_email %></td>
+          <td><code><%= row.remote_uuid %></code></td>
+          <td>
+            <% if (row.remote_sub_url) { %>
+              <a href="<%= row.remote_sub_url %>" target="_blank"><%= row.remote_sub_url %></a>
+            <% } else { %>
+              <span>Нет ссылки</span>
+            <% } %>
+          </td>
+        </tr>
+      <% }) %>
+    </table>
+  </div>
 </div>
 
 <div class="card">
@@ -131,12 +124,41 @@
   <pre style="white-space:pre-wrap; word-break:break-word;"><%= subscription %></pre>
 </div>
 
+<div id="qrModal" class="modal hidden" onclick="hideQr(event)">
+  <div class="modal-card" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeQr()">×</button>
+    <h2 id="qrTitle">QR</h2>
+    <img id="qrImg" alt="QR" />
+    <p class="muted" id="qrText"></p>
+  </div>
+</div>
+
 <script>
-function copySubLink(text) {
-  navigator.clipboard.writeText(text)
-    .then(() => alert('Ссылка скопирована'))
-    .catch(() => alert('Не удалось скопировать ссылку'));
+function showToast(text) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = text || 'Скопировано';
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 1300);
 }
+function copySubLink(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    if (btn) {
+      const old = btn.textContent;
+      btn.textContent = 'Скопировано';
+      setTimeout(() => btn.textContent = old, 1200);
+    }
+    showToast('Ссылка скопирована');
+  }).catch(() => showToast('Не удалось скопировать'));
+}
+function showQr(text, title) {
+  document.getElementById('qrTitle').textContent = title || 'QR';
+  document.getElementById('qrText').textContent = text;
+  document.getElementById('qrImg').src = '/qr?text=' + encodeURIComponent(text);
+  document.getElementById('qrModal').classList.remove('hidden');
+}
+function closeQr() { document.getElementById('qrModal').classList.add('hidden'); }
+function hideQr(e) { if (e.target.id === 'qrModal') closeQr(); }
 </script>
 
 <%- include('partials_footer') %>

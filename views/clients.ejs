@@ -1,4 +1,12 @@
 <%- include('partials_header') %>
+<%
+  function flagIcon(code) {
+    const cc = String(code || '').toLowerCase();
+    if (!cc) return '';
+    return '<img class="flag-icon" src="https://flagcdn.com/w20/' + cc + '.png" alt="' + cc.toUpperCase() + '" loading="lazy">';
+  }
+%>
+
 
 <h1>Клиенты</h1>
 
@@ -10,16 +18,23 @@
   <div class="alert err"><%= error %></div>
 <% } %>
 
+<div id="toast" class="toast">Скопировано</div>
+
 <div class="row">
   <div class="card">
     <h2>Создать клиента</h2>
     <form method="post" action="/clients">
       <label>Логин</label>
-      <input name="login" placeholder="user001" required />
+      <input name="login" placeholder="<%= nextLogin || 'user001' %>" />
+      <small>Если оставить пустым, будет создан автоматически: <%= nextLogin || 'user001' %></small>
 
       <label>Срок в днях</label>
-      <input name="duration_days" type="number" min="0" value="0" />
+      <input name="duration_days" type="number" min="0" value="30" />
       <small>0 = без даты окончания</small>
+
+      <label>Лимит трафика, ГБ</label>
+      <input name="traffic_gb" type="number" min="0" value="0" />
+      <small>0 = без лимита. Например: 30 = 30 ГБ на срок. Если срок указан, reset передаётся в 3x-ui.</small>
 
       <label>Лимит IP</label>
       <input name="limit_ip" type="number" min="1" value="1" required />
@@ -36,7 +51,7 @@
           <label class="checkbox-item">
             <input type="checkbox" name="node_ids" value="<%= node.id %>" />
             <span class="meta">
-              <strong><%= node.country_flag || '' %> <%= displayName %></strong>
+              <strong><%- flagIcon(node.country_code) %> <%= displayName %></strong>
               <small>inbound <%= node.inbound_id %></small>
             </span>
           </label>
@@ -61,7 +76,7 @@
             : baseName;
         %>
           <option value="<%= node.id %>">
-            <%= node.country_flag || '' %> <%= displayName %> (inbound <%= node.inbound_id %>)
+            <%- flagIcon(node.country_code) %> <%= displayName %> (inbound <%= node.inbound_id %>)
           </option>
         <% }) %>
       </select>
@@ -80,7 +95,7 @@
             : baseName;
         %>
           <option value="<%= node.id %>">
-            <%= node.country_flag || '' %> <%= displayName %> (inbound <%= node.inbound_id %>)
+            <%- flagIcon(node.country_code) %> <%= displayName %> (inbound <%= node.inbound_id %>)
           </option>
         <% }) %>
       </select>
@@ -89,7 +104,7 @@
     </form>
 
     <p style="margin-top:12px;">
-      Импорт берёт клиентов из выбранного основного узла, сохраняет их <b>UUID</b> и <b>subId</b>, после чего создаёт таких же клиентов на остальных узлах.
+      Импорт берёт клиентов из выбранного узла, сохраняет UUID/subId и создаёт таких же клиентов на остальных узлах.
     </p>
   </div>
 </div>
@@ -112,6 +127,12 @@
 <div class="card">
   <h2>Все клиенты</h2>
 
+  <form method="get" action="/clients" class="search-form">
+    <input name="q" value="<%= q || '' %>" placeholder="Поиск по имени, логину или UUID" />
+    <button type="submit" class="secondary">Найти</button>
+    <% if (q) { %><a class="link-btn secondary" href="/clients">Сбросить</a><% } %>
+  </form>
+
   <form method="post" action="/clients/bulk-delete" onsubmit="return confirm('Удалить выбранных клиентов?')">
     <div style="display:flex; gap:12px; align-items:end; flex-wrap:wrap; margin-bottom:14px;">
       <div>
@@ -126,70 +147,91 @@
       <button class="danger" type="submit" style="width:auto;">Удалить выбранных</button>
     </div>
 
-    <table>
-      <tr>
-        <th>
-          <input class="inline" type="checkbox" onclick="toggleAllClients(this)" />
-        </th>
-        <th>ID</th>
-        <th>Имя</th>
-        <th>Логин</th>
-        <th>UUID</th>
-        <th>Подписка</th>
-        <th>JSON</th>
-        <th>Действия</th>
-      </tr>
-
-      <% clients.forEach(client => { %>
+    <div class="table-wrap">
+      <table>
         <tr>
-          <td>
-            <input class="inline client-check" type="checkbox" name="client_ids" value="<%= client.id %>" />
-          </td>
-          <td><%= client.id %></td>
-          <td>
-            <a href="/clients/<%= client.id %>"><%= client.display_name %></a>
-          </td>
-          <td><%= client.login %></td>
-          <td><code><%= client.uuid %></code></td>
-          <td>
-            <button
-              type="button"
-              class="link-btn"
-              onclick="copySubLink('<%= baseUrl %>/sub/<%= client.sub_slug %>')"
-            >
-              Скопировать SUB
-            </button>
-          </td>
-          <td>
-            <button
-              type="button"
-              class="link-btn"
-              onclick="copySubLink('<%= baseUrl %>/json/<%= client.sub_slug %>')"
-            >
-              Скопировать JSON
-            </button>
-          </td>
-          <td>
-            <a class="link-btn" href="/clients/<%= client.id %>">Открыть</a>
-          </td>
+          <th><input class="inline" type="checkbox" onclick="toggleAllClients(this)" /></th>
+          <th>ID</th>
+          <th>Имя</th>
+          <th>Логин</th>
+          <th>Лимит</th>
+          <th>Подписка</th>
+          <th>JSON</th>
+          <th>QR</th>
+          <th>Действия</th>
         </tr>
-      <% }) %>
-    </table>
+
+        <% clients.forEach(client => {
+          const subUrl = `${baseUrl}/sub/${client.sub_slug}`;
+          const jsonUrl = `${baseUrl}/json/${client.sub_slug}`;
+        %>
+          <tr>
+            <td><input class="inline client-check" type="checkbox" name="client_ids" value="<%= client.id %>" /></td>
+            <td><%= client.id %></td>
+            <td><a href="/clients/<%= client.id %>"><%= client.display_name %></a></td>
+            <td><%= client.login %></td>
+            <td>
+              <% if (client.traffic_gb && client.traffic_gb > 0) { %><%= client.traffic_gb %> ГБ<% } else { %>∞<% } %>
+              / <% if (client.duration_days && client.duration_days > 0) { %><%= client.duration_days %> дн.<% } else { %>∞<% } %>
+            </td>
+            <td><button type="button" class="link-btn" onclick="copySubLink('<%= subUrl %>', this)">Скопировать SUB</button></td>
+            <td><button type="button" class="link-btn" onclick="copySubLink('<%= jsonUrl %>', this)">Скопировать JSON</button></td>
+            <td><button type="button" class="link-btn secondary" onclick="showQr('<%= subUrl %>', '<%= client.login %>')">QR SUB</button></td>
+            <td>
+              <a class="link-btn" href="/open/<%= client.sub_slug %>" target="_blank">Открыть</a>
+              <a class="link-btn secondary" href="/clients/<%= client.id %>">Детали</a>
+            </td>
+          </tr>
+        <% }) %>
+      </table>
+    </div>
   </form>
 </div>
 
+<div id="qrModal" class="modal hidden" onclick="hideQr(event)">
+  <div class="modal-card" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeQr()">×</button>
+    <h2 id="qrTitle">QR</h2>
+    <img id="qrImg" alt="QR" />
+    <p class="muted" id="qrText"></p>
+  </div>
+</div>
+
 <script>
-function copySubLink(text) {
+function showToast(text) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = text || 'Скопировано';
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 1300);
+}
+
+function copySubLink(text, btn) {
   navigator.clipboard.writeText(text)
-    .then(() => alert('Ссылка скопирована'))
-    .catch(() => alert('Не удалось скопировать ссылку'));
+    .then(() => {
+      if (btn) {
+        const old = btn.textContent;
+        btn.textContent = 'Скопировано';
+        setTimeout(() => btn.textContent = old, 1200);
+      }
+      showToast('Ссылка скопирована');
+    })
+    .catch(() => showToast('Не удалось скопировать'));
 }
 
 function toggleAllClients(source) {
-  document.querySelectorAll('.client-check').forEach(cb => {
-    cb.checked = source.checked;
-  });
+  document.querySelectorAll('.client-check').forEach(cb => cb.checked = source.checked);
 }
+
+function showQr(text, title) {
+  document.getElementById('qrTitle').textContent = title || 'QR';
+  document.getElementById('qrText').textContent = text;
+  document.getElementById('qrImg').src = '/qr?text=' + encodeURIComponent(text);
+  document.getElementById('qrModal').classList.remove('hidden');
+}
+
+function closeQr() { document.getElementById('qrModal').classList.add('hidden'); }
+function hideQr(e) { if (e.target.id === 'qrModal') closeQr(); }
 </script>
 
 <%- include('partials_footer') %>

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Подключение VPN</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body class="public-page">
+  <main class="public-card">
+    <h1>Подключение</h1>
+    <p class="muted">Отсканируй QR-код или открой ссылку в приложении.</p>
+
+    <div class="qr-box">
+      <img src="/qr?text=<%= encodeURIComponent(subUrl) %>" alt="QR" />
+    </div>
+
+    <div class="public-actions">
+      <a class="link-btn" href="<%= subUrl %>">Открыть SUB</a>
+      <a class="link-btn secondary" href="<%= jsonUrl %>">Открыть JSON</a>
+      <a class="link-btn" href="happ://import?url=<%= encodeURIComponent(subUrl) %>">Добавить в Happ</a>
+    </div>
+
+    <p class="code-inline public-url"><%= subUrl %></p>
+  </main>
+</body>
+</html>

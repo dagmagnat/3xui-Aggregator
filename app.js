@@ -7,29 +7,96 @@ const bcrypt = require('bcryptjs');
 const Database = require('better-sqlite3');
 const { randomUUID } = require('crypto');
 const fetch = require('node-fetch');
+const QRCode = require('qrcode');
 const { encrypt, decrypt } = require('./lib_crypto');
 
 const COUNTRIES = [
-  { code: 'NL', name_ru: 'Нидерланды', flag: '🇳🇱' },
-  { code: 'DE', name_ru: 'Германия', flag: '🇩🇪' },
-  { code: 'FI', name_ru: 'Финляндия', flag: '🇫🇮' },
+  { code: 'AE', name_ru: 'ОАЭ', flag: '🇦🇪' },
+  { code: 'AL', name_ru: 'Албания', flag: '🇦🇱' },
   { code: 'AM', name_ru: 'Армения', flag: '🇦🇲' },
-  { code: 'RU', name_ru: 'Россия', flag: '🇷🇺' },
-  { code: 'US', name_ru: 'США', flag: '🇺🇸' },
+  { code: 'AR', name_ru: 'Аргентина', flag: '🇦🇷' },
+  { code: 'AT', name_ru: 'Австрия', flag: '🇦🇹' },
+  { code: 'AU', name_ru: 'Австралия', flag: '🇦🇺' },
+  { code: 'AZ', name_ru: 'Азербайджан', flag: '🇦🇿' },
+  { code: 'BA', name_ru: 'Босния и Герцеговина', flag: '🇧🇦' },
+  { code: 'BE', name_ru: 'Бельгия', flag: '🇧🇪' },
+  { code: 'BG', name_ru: 'Болгария', flag: '🇧🇬' },
+  { code: 'BH', name_ru: 'Бахрейн', flag: '🇧🇭' },
+  { code: 'BR', name_ru: 'Бразилия', flag: '🇧🇷' },
+  { code: 'BY', name_ru: 'Беларусь', flag: '🇧🇾' },
+  { code: 'CA', name_ru: 'Канада', flag: '🇨🇦' },
+  { code: 'CH', name_ru: 'Швейцария', flag: '🇨🇭' },
+  { code: 'CL', name_ru: 'Чили', flag: '🇨🇱' },
+  { code: 'CN', name_ru: 'Китай', flag: '🇨🇳' },
+  { code: 'CO', name_ru: 'Колумбия', flag: '🇨🇴' },
+  { code: 'CR', name_ru: 'Коста-Рика', flag: '🇨🇷' },
+  { code: 'CY', name_ru: 'Кипр', flag: '🇨🇾' },
+  { code: 'CZ', name_ru: 'Чехия', flag: '🇨🇿' },
+  { code: 'DE', name_ru: 'Германия', flag: '🇩🇪' },
+  { code: 'DK', name_ru: 'Дания', flag: '🇩🇰' },
+  { code: 'EE', name_ru: 'Эстония', flag: '🇪🇪' },
+  { code: 'EG', name_ru: 'Египет', flag: '🇪🇬' },
+  { code: 'ES', name_ru: 'Испания', flag: '🇪🇸' },
+  { code: 'FI', name_ru: 'Финляндия', flag: '🇫🇮' },
   { code: 'FR', name_ru: 'Франция', flag: '🇫🇷' },
   { code: 'GB', name_ru: 'Великобритания', flag: '🇬🇧' },
-  { code: 'PL', name_ru: 'Польша', flag: '🇵🇱' },
-  { code: 'SE', name_ru: 'Швеция', flag: '🇸🇪' },
-  { code: 'NO', name_ru: 'Норвегия', flag: '🇳🇴' },
-  { code: 'CH', name_ru: 'Швейцария', flag: '🇨🇭' },
-  { code: 'AT', name_ru: 'Австрия', flag: '🇦🇹' },
-  { code: 'CZ', name_ru: 'Чехия', flag: '🇨🇿' },
-  { code: 'ES', name_ru: 'Испания', flag: '🇪🇸' },
+  { code: 'GE', name_ru: 'Грузия', flag: '🇬🇪' },
+  { code: 'GR', name_ru: 'Греция', flag: '🇬🇷' },
+  { code: 'HK', name_ru: 'Гонконг', flag: '🇭🇰' },
+  { code: 'HR', name_ru: 'Хорватия', flag: '🇭🇷' },
+  { code: 'HU', name_ru: 'Венгрия', flag: '🇭🇺' },
+  { code: 'ID', name_ru: 'Индонезия', flag: '🇮🇩' },
+  { code: 'IE', name_ru: 'Ирландия', flag: '🇮🇪' },
+  { code: 'IL', name_ru: 'Израиль', flag: '🇮🇱' },
+  { code: 'IN', name_ru: 'Индия', flag: '🇮🇳' },
+  { code: 'IQ', name_ru: 'Ирак', flag: '🇮🇶' },
+  { code: 'IS', name_ru: 'Исландия', flag: '🇮🇸' },
   { code: 'IT', name_ru: 'Италия', flag: '🇮🇹' },
-  { code: 'TR', name_ru: 'Турция', flag: '🇹🇷' },
-  { code: 'CA', name_ru: 'Канада', flag: '🇨🇦' },
+  { code: 'JO', name_ru: 'Иордания', flag: '🇯🇴' },
   { code: 'JP', name_ru: 'Япония', flag: '🇯🇵' },
-  { code: 'SG', name_ru: 'Сингапур', flag: '🇸🇬' }
+  { code: 'KG', name_ru: 'Кыргызстан', flag: '🇰🇬' },
+  { code: 'KR', name_ru: 'Южная Корея', flag: '🇰🇷' },
+  { code: 'KW', name_ru: 'Кувейт', flag: '🇰🇼' },
+  { code: 'KZ', name_ru: 'Казахстан', flag: '🇰🇿' },
+  { code: 'LT', name_ru: 'Литва', flag: '🇱🇹' },
+  { code: 'LU', name_ru: 'Люксембург', flag: '🇱🇺' },
+  { code: 'LV', name_ru: 'Латвия', flag: '🇱🇻' },
+  { code: 'MA', name_ru: 'Марокко', flag: '🇲🇦' },
+  { code: 'MD', name_ru: 'Молдова', flag: '🇲🇩' },
+  { code: 'ME', name_ru: 'Черногория', flag: '🇲🇪' },
+  { code: 'MK', name_ru: 'Северная Македония', flag: '🇲🇰' },
+  { code: 'MT', name_ru: 'Мальта', flag: '🇲🇹' },
+  { code: 'MX', name_ru: 'Мексика', flag: '🇲🇽' },
+  { code: 'MY', name_ru: 'Малайзия', flag: '🇲🇾' },
+  { code: 'NG', name_ru: 'Нигерия', flag: '🇳🇬' },
+  { code: 'NL', name_ru: 'Нидерланды', flag: '🇳🇱' },
+  { code: 'NO', name_ru: 'Норвегия', flag: '🇳🇴' },
+  { code: 'NZ', name_ru: 'Новая Зеландия', flag: '🇳🇿' },
+  { code: 'OM', name_ru: 'Оман', flag: '🇴🇲' },
+  { code: 'PA', name_ru: 'Панама', flag: '🇵🇦' },
+  { code: 'PE', name_ru: 'Перу', flag: '🇵🇪' },
+  { code: 'PH', name_ru: 'Филиппины', flag: '🇵🇭' },
+  { code: 'PK', name_ru: 'Пакистан', flag: '🇵🇰' },
+  { code: 'PL', name_ru: 'Польша', flag: '🇵🇱' },
+  { code: 'PT', name_ru: 'Португалия', flag: '🇵🇹' },
+  { code: 'QA', name_ru: 'Катар', flag: '🇶🇦' },
+  { code: 'RO', name_ru: 'Румыния', flag: '🇷🇴' },
+  { code: 'RS', name_ru: 'Сербия', flag: '🇷🇸' },
+  { code: 'RU', name_ru: 'Россия', flag: '🇷🇺' },
+  { code: 'SA', name_ru: 'Саудовская Аравия', flag: '🇸🇦' },
+  { code: 'SE', name_ru: 'Швеция', flag: '🇸🇪' },
+  { code: 'SG', name_ru: 'Сингапур', flag: '🇸🇬' },
+  { code: 'SI', name_ru: 'Словения', flag: '🇸🇮' },
+  { code: 'SK', name_ru: 'Словакия', flag: '🇸🇰' },
+  { code: 'TH', name_ru: 'Таиланд', flag: '🇹🇭' },
+  { code: 'TJ', name_ru: 'Таджикистан', flag: '🇹🇯' },
+  { code: 'TR', name_ru: 'Турция', flag: '🇹🇷' },
+  { code: 'TW', name_ru: 'Тайвань', flag: '🇹🇼' },
+  { code: 'UA', name_ru: 'Украина', flag: '🇺🇦' },
+  { code: 'US', name_ru: 'США', flag: '🇺🇸' },
+  { code: 'UZ', name_ru: 'Узбекистан', flag: '🇺🇿' },
+  { code: 'VN', name_ru: 'Вьетнам', flag: '🇻🇳' },
+  { code: 'ZA', name_ru: 'ЮАР', flag: '🇿🇦' }
 ];
 
 function getCountryFlag(countryName) {
@@ -120,6 +187,8 @@ function initDb() {
       display_name TEXT NOT NULL,
       uuid TEXT NOT NULL,
       sub_slug TEXT UNIQUE NOT NULL,
+      duration_days INTEGER NOT NULL DEFAULT 0,
+      traffic_gb INTEGER NOT NULL DEFAULT 0,
       enabled INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -141,6 +210,8 @@ function initDb() {
   try { db.prepare(`ALTER TABLE nodes ADD COLUMN country_flag TEXT DEFAULT ''`).run(); } catch (_) {}
   try { db.prepare(`ALTER TABLE nodes ADD COLUMN sub_base_url TEXT DEFAULT ''`).run(); } catch (_) {}
   try { db.prepare(`ALTER TABLE nodes ADD COLUMN label_suffix TEXT DEFAULT ''`).run(); } catch (_) {}
+  try { db.prepare(`ALTER TABLE clients ADD COLUMN duration_days INTEGER NOT NULL DEFAULT 0`).run(); } catch (_) {}
+  try { db.prepare(`ALTER TABLE clients ADD COLUMN traffic_gb INTEGER NOT NULL DEFAULT 0`).run(); } catch (_) {}
 
   const existingAdmin = db.prepare('SELECT id FROM app_users WHERE username = ?').get(ADMIN_USERNAME);
   if (!existingAdmin) {
@@ -564,6 +635,7 @@ async function importClientsFromNode(node) {
       subId,
       tgId: c.tgId || '',
       reset: c.reset || 0,
+      totalGB: Number(c.totalGB || 0),
       originalSub: buildNativeSubUrl(node, subId),
       originalJson: buildNativeJsonUrl(node, subId)
     };
@@ -587,6 +659,31 @@ function makeUniqueLogin(baseLogin, existingId = 0) {
   }
 }
 
+function getNextAutoLogin() {
+  const rows = db.prepare(`
+    SELECT login FROM clients
+    WHERE login LIKE 'user%'
+  `).all();
+
+  let maxNumber = 0;
+  for (const row of rows) {
+    const match = String(row.login || '').match(/^user(\d+)$/i);
+    if (match) maxNumber = Math.max(maxNumber, Number(match[1]));
+  }
+
+  return `user${String(maxNumber + 1).padStart(3, '0')}`;
+}
+
+function toTotalGbBytes(gb) {
+  const n = Math.max(0, Number(gb || 0));
+  return n > 0 ? Math.floor(n * 1024 * 1024 * 1024) : 0;
+}
+
+function fromTotalGbBytes(bytes) {
+  const n = Math.max(0, Number(bytes || 0));
+  return n > 0 ? Math.round(n / 1024 / 1024 / 1024) : 0;
+}
+
 async function syncClientsFromSourceNode(sourceNode) {
   const allNodes = db.prepare('SELECT * FROM nodes WHERE enabled = 1 ORDER BY id ASC').all();
 
@@ -605,24 +702,14 @@ async function syncClientsFromSourceNode(sourceNode) {
     let clientRow = db.prepare('SELECT * FROM clients WHERE uuid = ?').get(rc.uuid);
 
     if (!clientRow) {
-      let subSlug = rc.subId || randomUUID().replace(/-/g, '').slice(0, 16);
+      const subSlug = rc.subId;
+      const login = makeUniqueLogin(rc.email);
+      const displayName = rc.email;
 
-const slugExists = db.prepare(`
-  SELECT id FROM clients
-  WHERE sub_slug = ?
-`).get(subSlug);
-
-if (slugExists) {
-  subSlug = `${subSlug}-${randomUUID().replace(/-/g, '').slice(0, 6)}`;
-}
-
-const login = makeUniqueLogin(rc.email);
-const displayName = rc.email;
-
-const clientInfo = db.prepare(`
-  INSERT INTO clients (login, display_name, uuid, sub_slug)
-  VALUES (?, ?, ?, ?)
-`).run(login, displayName, rc.uuid, subSlug);
+      const clientInfo = db.prepare(`
+        INSERT INTO clients (login, display_name, uuid, sub_slug, duration_days, traffic_gb)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(login, displayName, rc.uuid, subSlug, 0, fromTotalGbBytes(rc.totalGB));
 
       clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientInfo.lastInsertRowid);
       imported++;
@@ -672,7 +759,7 @@ const clientInfo = db.prepare(`
               email: clientEmail,
               flow: rc.flow || settings.clients?.[0]?.flow || '',
               limitIp: rc.limitIp || 1,
-              totalGB: 0,
+              totalGB: Number(rc.totalGB || 0),
               expiryTime: rc.expiryTime || 0,
               enable: rc.enable !== false,
               tgId: rc.tgId || '',
@@ -978,20 +1065,37 @@ app.post('/nodes/:id/delete', requireAuth, (req, res) => {
 });
 
 app.get('/clients', requireAuth, (req, res) => {
-  const clients = db.prepare(`
-  SELECT
-    c.*,
-    (
-      SELECT cn.remote_sub_url
-      FROM client_nodes cn
-      WHERE cn.client_id = c.id
-        AND cn.remote_sub_url LIKE 'http%'
-      ORDER BY cn.id ASC
-      LIMIT 1
-    ) AS source_sub_url
-  FROM clients c
-  ORDER BY c.id DESC
-`).all();
+  const q = String(req.query.q || '').trim();
+  const like = `%${q}%`;
+  const clients = q
+    ? db.prepare(`
+        SELECT c.*,
+          (
+            SELECT cn.remote_sub_url
+            FROM client_nodes cn
+            WHERE cn.client_id = c.id
+              AND cn.remote_sub_url LIKE 'http%'
+            ORDER BY cn.id ASC
+            LIMIT 1
+          ) AS source_sub_url
+        FROM clients c
+        WHERE c.login LIKE ? OR c.display_name LIKE ? OR c.uuid LIKE ?
+        ORDER BY c.id DESC
+      `).all(like, like, like)
+    : db.prepare(`
+        SELECT c.*,
+          (
+            SELECT cn.remote_sub_url
+            FROM client_nodes cn
+            WHERE cn.client_id = c.id
+              AND cn.remote_sub_url LIKE 'http%'
+            ORDER BY cn.id ASC
+            LIMIT 1
+          ) AS source_sub_url
+        FROM clients c
+        ORDER BY c.id DESC
+      `).all();
+
   const nodes = db.prepare('SELECT * FROM nodes WHERE enabled = 1 ORDER BY id ASC').all();
 
   render(res, 'clients', {
@@ -999,23 +1103,26 @@ app.get('/clients', requireAuth, (req, res) => {
     nodes,
     message: req.query.message || '',
     error: req.query.error || '',
-    baseUrl: BASE_URL
+    baseUrl: BASE_URL,
+    q,
+    nextLogin: getNextAutoLogin()
   });
 });
 
 app.post('/clients', requireAuth, async (req, res) => {
   try {
-    const { login, limit_ip, duration_days } = req.body;
+    const { login, limit_ip, duration_days, traffic_gb } = req.body;
     let nodeIds = req.body.node_ids || [];
 
     if (!Array.isArray(nodeIds)) nodeIds = [nodeIds];
     if (!nodeIds.length) throw new Error('Нужно выбрать хотя бы один узел');
-    if (!login || !String(login).trim()) throw new Error('Нужно указать логин');
 
-    const cleanLogin = String(login).trim();
+    const cleanLogin = String(login || '').trim() || getNextAutoLogin();
     const cleanDisplayName = cleanLogin;
     const cleanLimitIp = Math.max(1, Number(limit_ip || 1));
     const cleanDurationDays = Math.max(0, Number(duration_days || 0));
+    const cleanTrafficGb = Math.max(0, Number(traffic_gb || 0));
+    const totalGbBytes = toTotalGbBytes(cleanTrafficGb);
 
     const expiryTime = cleanDurationDays > 0
       ? Date.now() + cleanDurationDays * 24 * 60 * 60 * 1000
@@ -1026,9 +1133,9 @@ app.post('/clients', requireAuth, async (req, res) => {
     const subSlug = sharedSubId;
 
     const clientInfo = db.prepare(`
-      INSERT INTO clients (login, display_name, uuid, sub_slug)
-      VALUES (?, ?, ?, ?)
-    `).run(cleanLogin, cleanDisplayName, uuid, subSlug);
+      INSERT INTO clients (login, display_name, uuid, sub_slug, duration_days, traffic_gb)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(cleanLogin, cleanDisplayName, uuid, subSlug, cleanDurationDays, cleanTrafficGb);
 
     const clientId = clientInfo.lastInsertRowid;
 
@@ -1050,12 +1157,12 @@ app.post('/clients', requireAuth, async (req, res) => {
             email: clientEmail,
             flow: settings.clients?.[0]?.flow || '',
             limitIp: cleanLimitIp,
-            totalGB: 0,
+            totalGB: totalGbBytes,
             expiryTime,
             enable: true,
             tgId: '',
             subId: sharedSubId,
-            reset: 0
+            reset: cleanDurationDays > 0 && cleanTrafficGb > 0 ? cleanDurationDays : 0
           }]
         })
       };
@@ -1203,7 +1310,7 @@ app.post('/clients/:id/sync', requireAuth, async (req, res) => {
             email: clientEmail,
             flow: clientCfg?.flow || settings.clients?.[0]?.flow || '',
             limitIp: clientCfg?.limitIp || 1,
-            totalGB: 0,
+            totalGB: Number(clientCfg?.totalGB || 0),
             expiryTime: clientCfg?.expiryTime || 0,
             enable: clientCfg?.enable !== false,
             tgId: clientCfg?.tgId || '',
@@ -1243,7 +1350,7 @@ app.get('/clients/:id', requireAuth, async (req, res) => {
   }
 
   const mappings = db.prepare(`
-    SELECT cn.*, n.name AS node_name, n.country_name_ru, n.country_flag, n.label_suffix, n.last_status, n.inbound_id
+    SELECT cn.*, n.name AS node_name, n.country_code, n.country_name_ru, n.country_flag, n.label_suffix, n.last_status, n.inbound_id
     FROM client_nodes cn
     JOIN nodes n ON n.id = cn.node_id
     WHERE cn.client_id = ?
@@ -1320,6 +1427,38 @@ app.get('/json/:slug', async (req, res) => {
     login: client.login,
     count: lines.length,
     subscriptions: lines
+  });
+});
+
+
+app.get('/qr', async (req, res) => {
+  try {
+    const text = String(req.query.text || '').trim();
+    if (!text) return res.status(400).send('Missing text');
+
+    const svg = await QRCode.toString(text, {
+      type: 'svg',
+      margin: 1,
+      width: 320,
+      errorCorrectionLevel: 'M'
+    });
+
+    res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+    res.send(svg);
+  } catch (err) {
+    res.status(500).send(String(err.message || err));
+  }
+});
+
+app.get('/open/:slug', async (req, res) => {
+  const client = db.prepare('SELECT * FROM clients WHERE sub_slug = ? AND enabled = 1').get(req.params.slug);
+  if (!client) return res.status(404).send('Subscription not found');
+
+  render(res, 'open_sub', {
+    client,
+    subUrl: `${BASE_URL}/sub/${client.sub_slug}`,
+    jsonUrl: `${BASE_URL}/json/${client.sub_slug}`,
+    baseUrl: BASE_URL
   });
 });
 
