@@ -2049,6 +2049,17 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
             'geosite:whatsapp',
             'domain:whatsapp.com',
             'domain:whatsapp.net',
+            'domain:wa.me',
+            'domain:web.whatsapp.com',
+            'domain:static.whatsapp.net',
+            'domain:mmg.whatsapp.net',
+            'domain:graph.whatsapp.com',
+            'domain:g.whatsapp.net',
+            'domain:facebook.net',
+            'domain:messenger.com',
+            'domain:m.me',
+            'domain:graph.facebook.com',
+            'domain:mqtt-mini.facebook.com',
 
             'geosite:telegram',
             'domain:telegram.org',
@@ -2077,6 +2088,13 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
           type: 'field',
           ip: [
             'geoip:telegram'
+          ],
+          outboundTag: 'proxy'
+        },
+        {
+          type: 'field',
+          ip: [
+            'geoip:facebook'
           ],
           outboundTag: 'proxy'
         },
