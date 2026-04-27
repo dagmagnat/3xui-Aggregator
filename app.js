@@ -1774,6 +1774,12 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
     });
   }
 
+  const profileRemark =
+    proxyOutbounds.find(outbound => outbound.remarks)?.remarks ||
+    getRemarkFromVlessLine(lines.find(line => String(line).startsWith('vless://')) || '') ||
+    subscriptionName ||
+    DEFAULT_SUBSCRIPTION_NAME;
+
   return {
     dns: {
       hosts: {
@@ -1824,6 +1830,7 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
     log: {
       loglevel: 'warning'
     },
+    remarks: profileRemark,
     outbounds: [
       ...proxyOutbounds,
       {
