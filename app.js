@@ -217,6 +217,7 @@ function initDb() {
   try { db.prepare(`ALTER TABLE clients ADD COLUMN traffic_gb INTEGER NOT NULL DEFAULT 0`).run(); } catch (_) {}
   try { db.prepare(`ALTER TABLE clients ADD COLUMN limit_ip INTEGER NOT NULL DEFAULT 1`).run(); } catch (_) {}
   try { db.prepare(`ALTER TABLE clients ADD COLUMN expiry_time INTEGER NOT NULL DEFAULT 0`).run(); } catch (_) {}
+  try { db.prepare(`ALTER TABLE clients ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`).run(); } catch (_) {}
   try { db.prepare(`ALTER TABLE client_nodes ADD COLUMN traffic_gb INTEGER NOT NULL DEFAULT 0`).run(); } catch (_) {}
 
   const existingAdmin = db.prepare('SELECT id FROM app_users WHERE username = ?').get(ADMIN_USERNAME);
@@ -878,7 +879,7 @@ async function updateClientOnNode(node, map, client, opts = {}) {
         limitIp,
         totalGB: toTotalGbBytes(trafficGb),
         expiryTime,
-        enable: current.enable !== false,
+        enable: opts.enabled !== undefined ? Boolean(opts.enabled) : (client.enabled !== 0 && current.enable !== false),
         tgId: current.tgId || '',
         subId,
         reset: durationDays > 0 && trafficGb > 0 ? durationDays : 0
@@ -1483,36 +1484,55 @@ app.post('/clients/:id/sync', requireAuth, async (req, res) => {
 });
 
 app.get('/clients/:id', requireAuth, async (req, res) => {
-  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(Number(req.params.id));
+  try {
+    const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(Number(req.params.id));
 
-  if (!client) {
-    return res.status(404).send('Client not found');
+    if (!client) {
+      return res.status(404).send('Client not found');
+    }
+
+    const mappings = db.prepare(`
+      SELECT
+        cn.*,
+        n.id AS node_real_id,
+        n.name AS node_name,
+        n.country_code,
+        n.country_name_ru,
+        n.country_flag,
+        n.label_suffix,
+        n.last_status,
+        n.inbound_id
+      FROM client_nodes cn
+      JOIN nodes n ON n.id = cn.node_id
+      WHERE cn.client_id = ?
+      ORDER BY cn.id ASC
+    `).all(client.id);
+
+    const lines = await buildSubscriptionLines(client, true);
+    const nodes = db.prepare(`
+      SELECT * FROM nodes
+      WHERE enabled = 1
+        AND id NOT IN (SELECT node_id FROM client_nodes WHERE client_id = ?)
+      ORDER BY id ASC
+    `).all(client.id);
+
+    const sourceSubUrl =
+      mappings.find(m => m.remote_sub_url && /^https?:\/\//.test(m.remote_sub_url))?.remote_sub_url || '';
+
+    render(res, 'client_detail', {
+      client,
+      mappings,
+      subscription: lines.join('\n'),
+      baseUrl: BASE_URL,
+      sourceSubUrl,
+      nodes,
+      message: req.query.message || '',
+      error: req.query.error || ''
+    });
+  } catch (err) {
+    console.error('Client detail error:', err);
+    res.status(500).send('Internal Server Error: ' + String(err.message || err));
   }
-
-  const mappings = db.prepare(`
-    SELECT cn.*, n.name AS node_name, n.country_code, n.country_name_ru, n.country_flag, n.label_suffix, n.last_status, n.inbound_id
-    FROM client_nodes cn
-    JOIN nodes n ON n.id = cn.node_id
-    WHERE cn.client_id = ?
-    ORDER BY cn.id ASC
-  `).all(client.id);
-
-  const lines = await buildSubscriptionLines(client, true);
-  const nodes = db.prepare('SELECT * FROM nodes WHERE enabled = 1 ORDER BY id ASC').all();
-
-  const sourceSubUrl =
-    mappings.find(m => m.remote_sub_url && /^https?:\/\//.test(m.remote_sub_url))?.remote_sub_url || '';
-
-  render(res, 'client_detail', {
-    client,
-    mappings,
-    subscription: lines.join('\n'),
-    baseUrl: BASE_URL,
-    sourceSubUrl,
-    nodes,
-    message: req.query.message || '',
-    error: req.query.error || ''
-  });
 });
 
 app.post('/clients/:id/edit', requireAuth, async (req, res) => {
@@ -1583,6 +1603,29 @@ app.post('/clients/:id/extend', requireAuth, async (req, res) => {
     res.redirect('/dashboard?message=' + encodeURIComponent('Клиент продлён'));
   } catch (err) {
     res.redirect('/dashboard?error=' + encodeURIComponent(String(err.message || err)));
+  }
+});
+
+app.post('/clients/:id/toggle', requireAuth, async (req, res) => {
+  try {
+    const clientId = Number(req.params.id);
+    const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+    if (!client) throw new Error('Клиент не найден');
+
+    const enabled = client.enabled === 1 ? 0 : 1;
+    db.prepare('UPDATE clients SET enabled = ? WHERE id = ?').run(enabled, clientId);
+
+    const updatedClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+    await updateClientEverywhere(updatedClient, { enabled: Boolean(enabled) });
+
+    const msg = enabled ? 'Клиент включён' : 'Клиент отключён';
+    const back = String(req.body.back || '');
+    if (back.includes(`/clients/${clientId}`)) {
+      return res.redirect(`/clients/${clientId}?message=${encodeURIComponent(msg)}`);
+    }
+    res.redirect(`/clients?message=${encodeURIComponent(msg)}`);
+  } catch (err) {
+    res.redirect('/clients?error=' + encodeURIComponent(String(err.message || err)));
   }
 });
 
@@ -1687,6 +1730,15 @@ function parseVlessLineToOutbound(line, index = 0) {
   return outbound;
 }
 
+function getRemarkFromVlessLine(line) {
+  try {
+    const raw = String(line || '');
+    const idx = raw.indexOf('#');
+    if (idx >= 0) return decodeURIComponent(raw.slice(idx + 1)).trim();
+  } catch (_) {}
+  return '';
+}
+
 function buildHappJsonConfig(client, lines, subscriptionName) {
   const proxyOutbounds = lines
     .filter(line => String(line).startsWith('vless://'))
@@ -1787,7 +1839,7 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
         statsOutboundUplink: true
       }
     },
-    remarks: subscriptionName || client.display_name || client.login,
+    remarks: getRemarkFromVlessLine(lines[0]) || client.display_name || client.login || subscriptionName,
     routing: {
       domainStrategy: 'IPIfNonMatch',
       rules: [

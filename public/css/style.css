@@ -855,3 +855,48 @@ tbody tr:hover { background: rgba(255,255,255,.025); }
     width: 100%;
   }
 }
+
+/* v6 fixes */
+.action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 260px;
+}
+.action-buttons .inline-form { margin: 0; }
+.action-buttons .inline-form button { width: auto; }
+.table-wrap table td { vertical-align: middle; }
+.btn-pair { min-width: 220px; }
+.detail-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+}
+.detail-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 190px;
+}
+.link-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+.copy-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+.copy-row input { width: 100%; }
+.node-edit-row { grid-template-columns: 0 1fr 120px !important; }
+@media (max-width: 800px) {
+  .detail-hero { flex-direction: column; }
+  .detail-actions { width: 100%; }
+  .copy-row { grid-template-columns: 1fr; }
+  .action-buttons { min-width: 0; }
+  .btn-pair { min-width: 0; }
+}

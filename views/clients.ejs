@@ -144,6 +144,7 @@
           <th>Имя</th>
           <th>Логин</th>
           <th>Лимит</th>
+          <th>Статус</th>
           <th>Подписка</th>
           <th>JSON</th>
           <th>Действия</th>
@@ -162,6 +163,7 @@
               <% if (client.traffic_gb && client.traffic_gb > 0) { %><%= client.traffic_gb %> ГБ<% } else { %>∞<% } %>
               / <% if (client.duration_days && client.duration_days > 0) { %><%= client.duration_days %> дн.<% } else { %>∞<% } %>
             </td>
+            <td><span class="badge <%= client.enabled !== 0 ? 'online' : 'offline' %>"><%= client.enabled !== 0 ? 'Включён' : 'Отключён' %></span></td>
             <td class="btn-pair">
               <button type="button" class="link-btn" onclick="copySubLink('<%= subUrl %>', this)">Скопировать SUB</button>
               <button type="button" class="link-btn secondary" onclick="showQr('<%= subUrl %>', '<%= client.login %> · SUB')">QR</button>
@@ -170,9 +172,12 @@
               <button type="button" class="link-btn" onclick="copySubLink('<%= jsonUrl %>', this)">Скопировать JSON</button>
               <button type="button" class="link-btn secondary" onclick="showQr('<%= jsonUrl %>', '<%= client.login %> · JSON')">QR</button>
             </td>
-            <td>
+            <td class="action-buttons">
               <a class="link-btn" href="/open/<%= client.sub_slug %>" target="_blank">Открыть</a>
               <a class="link-btn secondary" href="/clients/<%= client.id %>">Детали</a>
+              <form method="post" action="/clients/<%= client.id %>/toggle" class="inline-form">
+                <button type="submit" class="<%= client.enabled !== 0 ? 'danger' : 'secondary' %>"><%= client.enabled !== 0 ? 'Отключить' : 'Включить' %></button>
+              </form>
             </td>
           </tr>
         <% }) %>
