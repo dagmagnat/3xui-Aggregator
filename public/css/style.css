@@ -1032,6 +1032,8 @@ tbody tr:hover { background: rgba(255,255,255,.025); }
 .node-actions {
   display: grid; grid-template-columns: repeat(3, 112px); gap: 8px; align-items: center; margin-top: 0;
 }
+.node-actions-4 { grid-template-columns: repeat(4, 112px); }
+.muted-row { opacity: 0.62; }
 .node-actions .inline-form, .node-actions a { width: 112px; margin: 0; }
 .node-actions button, .node-actions .link-btn { width: 112px; min-height: 40px; padding: 0 10px; justify-content: center; }
 @media (max-width: 900px) {

@@ -569,6 +569,7 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
 
   for (const row of rows) {
     try {
+      if (Number(row.enabled) !== 1) continue;
       if (!includeOffline && row.last_status === 'offline') continue;
 
       const inbound = await getInbound(row);
@@ -1192,6 +1193,27 @@ app.post('/nodes/:id/edit', requireAuth, async (req, res) => {
     res.redirect('/nodes?message=' + encodeURIComponent('Узел обновлён'));
   } catch (err) {
     res.redirect('/nodes/' + req.params.id + '/edit?error=' + encodeURIComponent(String(err.message || err)));
+  }
+});
+
+app.post('/nodes/:id/toggle', requireAuth, (req, res) => {
+  try {
+    const nodeId = Number(req.params.id);
+    const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId);
+    if (!node) {
+      return res.redirect('/nodes?error=' + encodeURIComponent('Узел не найден'));
+    }
+
+    const enabled = Number(node.enabled) === 1 ? 0 : 1;
+    db.prepare('UPDATE nodes SET enabled = ? WHERE id = ?').run(enabled, nodeId);
+
+    const msg = enabled
+      ? 'Узел включён. Он снова будет попадать в SUB/JSON подписки.'
+      : 'Узел отключён. Он больше не будет попадать в SUB/JSON подписки клиентов.';
+
+    res.redirect('/nodes?message=' + encodeURIComponent(msg));
+  } catch (err) {
+    res.redirect('/nodes?error=' + encodeURIComponent(String(err.message || err)));
   }
 });
 
