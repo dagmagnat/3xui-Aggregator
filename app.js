@@ -139,11 +139,11 @@ app.use(session({
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  rolling: false,
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: false,
-    maxAge: 1000 * 60 * 60 * 24 * 7
+    secure: false
   }
 }));
 
@@ -189,6 +189,8 @@ function initDb() {
       sub_slug TEXT UNIQUE NOT NULL,
       duration_days INTEGER NOT NULL DEFAULT 0,
       traffic_gb INTEGER NOT NULL DEFAULT 0,
+      limit_ip INTEGER NOT NULL DEFAULT 1,
+      expiry_time INTEGER NOT NULL DEFAULT 0,
       enabled INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -200,6 +202,7 @@ function initDb() {
       remote_email TEXT NOT NULL,
       remote_uuid TEXT NOT NULL,
       remote_sub_url TEXT DEFAULT '',
+      traffic_gb INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(client_id, node_id)
     );
@@ -212,6 +215,9 @@ function initDb() {
   try { db.prepare(`ALTER TABLE nodes ADD COLUMN label_suffix TEXT DEFAULT ''`).run(); } catch (_) {}
   try { db.prepare(`ALTER TABLE clients ADD COLUMN duration_days INTEGER NOT NULL DEFAULT 0`).run(); } catch (_) {}
   try { db.prepare(`ALTER TABLE clients ADD COLUMN traffic_gb INTEGER NOT NULL DEFAULT 0`).run(); } catch (_) {}
+  try { db.prepare(`ALTER TABLE clients ADD COLUMN limit_ip INTEGER NOT NULL DEFAULT 1`).run(); } catch (_) {}
+  try { db.prepare(`ALTER TABLE clients ADD COLUMN expiry_time INTEGER NOT NULL DEFAULT 0`).run(); } catch (_) {}
+  try { db.prepare(`ALTER TABLE client_nodes ADD COLUMN traffic_gb INTEGER NOT NULL DEFAULT 0`).run(); } catch (_) {}
 
   const existingAdmin = db.prepare('SELECT id FROM app_users WHERE username = ?').get(ADMIN_USERNAME);
   if (!existingAdmin) {
@@ -227,8 +233,30 @@ function initDb() {
 
 initDb();
 
+function getClientIp(req) {
+  return String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')
+    .split(',')[0]
+    .trim();
+}
+
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.redirect('/login');
+
+  const now = Date.now();
+  const currentIp = getClientIp(req);
+  const lastActivity = Number(req.session.lastActivity || 0);
+  const loginIp = String(req.session.loginIp || '');
+
+  if (loginIp && currentIp && loginIp !== currentIp) {
+    return req.session.destroy(() => res.redirect('/login'));
+  }
+
+  if (lastActivity && now - lastActivity > 30 * 60 * 1000) {
+    return req.session.destroy(() => res.redirect('/login'));
+  }
+
+  req.session.loginIp = currentIp;
+  req.session.lastActivity = now;
   next();
 }
 
@@ -421,6 +449,10 @@ async function getInbounds(node) {
 
 async function addClient(node, payload) {
   return apiPost(node, '/panel/api/inbounds/addClient', payload, true);
+}
+
+async function updateClient(node, clientUuid, payload) {
+  return apiPost(node, `/panel/api/inbounds/updateClient/${encodeURIComponent(clientUuid)}`, payload, true);
 }
 
 async function deleteClient(node, clientUuid, email) {
@@ -702,14 +734,16 @@ async function syncClientsFromSourceNode(sourceNode) {
     let clientRow = db.prepare('SELECT * FROM clients WHERE uuid = ?').get(rc.uuid);
 
     if (!clientRow) {
-      const subSlug = rc.subId;
+      let subSlug = rc.subId || randomUUID().replace(/-/g, '').slice(0, 16);
+      const slugConflict = db.prepare('SELECT id FROM clients WHERE sub_slug = ?').get(subSlug);
+      if (slugConflict) subSlug = subSlug + '-' + randomUUID().replace(/-/g, '').slice(0, 6);
       const login = makeUniqueLogin(rc.email);
       const displayName = rc.email;
 
       const clientInfo = db.prepare(`
-        INSERT INTO clients (login, display_name, uuid, sub_slug, duration_days, traffic_gb)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(login, displayName, rc.uuid, subSlug, 0, fromTotalGbBytes(rc.totalGB));
+        INSERT INTO clients (login, display_name, uuid, sub_slug, duration_days, traffic_gb, limit_ip, expiry_time)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(login, displayName, rc.uuid, subSlug, 0, fromTotalGbBytes(rc.totalGB), rc.limitIp || 1, rc.expiryTime || 0);
 
       clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientInfo.lastInsertRowid);
       imported++;
@@ -785,10 +819,11 @@ async function syncClientsFromSourceNode(sourceNode) {
           node_id,
           remote_email,
           remote_uuid,
-          remote_sub_url
+          remote_sub_url,
+          traffic_gb
         )
-        VALUES (?, ?, ?, ?, ?)
-      `).run(clientRow.id, node.id, clientEmail, rc.uuid, subUrl);
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(clientRow.id, node.id, clientEmail, rc.uuid, subUrl, fromTotalGbBytes(rc.totalGB));
 
       mappingsCreated++;
     }
@@ -813,6 +848,59 @@ async function getClientConfigFromNode(node, clientUuid, clientEmail) {
     clients.find(c => c.email === clientEmail);
 
   return { inbound, clientCfg };
+}
+
+function pickClientFlow(settings, uuid, fallback = '') {
+  const clients = Array.isArray(settings?.clients) ? settings.clients : [];
+  return clients.find(c => c.id === uuid)?.flow || clients[0]?.flow || fallback || '';
+}
+
+async function updateClientOnNode(node, map, client, opts = {}) {
+  const inbound = await getInbound(node);
+  const settings = safeParseJsonField(inbound.settings, {});
+  const current = (settings.clients || []).find(c => c.id === map.remote_uuid) ||
+                  (settings.clients || []).find(c => c.email === map.remote_email) || {};
+
+  const durationDays = Math.max(0, Number(opts.duration_days ?? client.duration_days ?? 0));
+  const trafficGb = Math.max(0, Number(opts.traffic_gb ?? map.traffic_gb ?? client.traffic_gb ?? 0));
+  const limitIp = Math.max(1, Number(opts.limit_ip ?? client.limit_ip ?? current.limitIp ?? 1));
+  const expiryTime = Math.max(0, Number(opts.expiry_time ?? client.expiry_time ?? current.expiryTime ?? 0));
+  const email = String(opts.email || client.login || map.remote_email || current.email || '').trim();
+  const subId = current.subId || client.sub_slug || randomUUID().replace(/-/g, '').slice(0, 16);
+
+  const payload = {
+    id: Number(node.inbound_id),
+    settings: JSON.stringify({
+      clients: [{
+        id: map.remote_uuid,
+        email,
+        flow: current.flow || pickClientFlow(settings, map.remote_uuid),
+        limitIp,
+        totalGB: toTotalGbBytes(trafficGb),
+        expiryTime,
+        enable: current.enable !== false,
+        tgId: current.tgId || '',
+        subId,
+        reset: durationDays > 0 && trafficGb > 0 ? durationDays : 0
+      }]
+    })
+  };
+
+  await updateClient(node, map.remote_uuid, payload);
+  db.prepare('UPDATE client_nodes SET remote_email = ?, traffic_gb = ? WHERE id = ?').run(email, trafficGb, map.id);
+}
+
+async function updateClientEverywhere(client, opts = {}) {
+  const mappings = db.prepare('SELECT * FROM client_nodes WHERE client_id = ?').all(client.id);
+  for (const map of mappings) {
+    try {
+      const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(map.node_id);
+      if (!node) continue;
+      await updateClientOnNode(node, map, client, opts);
+    } catch (err) {
+      console.error('Update remote client failed:', err.message);
+    }
+  }
 }
 
 async function deleteClientEverywhere(client, deleteMode) {
@@ -860,6 +948,8 @@ app.post('/login', (req, res) => {
   }
 
   req.session.userId = user.id;
+  req.session.loginIp = getClientIp(req);
+  req.session.lastActivity = Date.now();
   res.redirect('/dashboard');
 });
 
@@ -875,17 +965,34 @@ app.get('/dashboard', requireAuth, (req, res) => {
     offline: db.prepare("SELECT COUNT(*) AS c FROM nodes WHERE last_status = 'offline'").get().c,
   };
 
+  const now = Date.now();
+  const week = now + 7 * 24 * 60 * 60 * 1000;
   const nodes = db.prepare('SELECT * FROM nodes ORDER BY id DESC').all();
-  const clients = db.prepare('SELECT * FROM clients ORDER BY id DESC LIMIT 10').all();
+  const expiringClients = db.prepare(`
+    SELECT * FROM clients
+    WHERE enabled = 1 AND expiry_time > 0 AND expiry_time <= ?
+    ORDER BY expiry_time ASC
+    LIMIT 25
+  `).all(week);
 
-  render(res, 'dashboard', { stats, nodes, clients, baseUrl: BASE_URL });
+  render(res, 'dashboard', {
+    stats,
+    nodes,
+    expiringClients,
+    now,
+    baseUrl: BASE_URL,
+    message: req.query.message || '',
+    error: req.query.error || ''
+  });
 });
 
 app.get('/settings', requireAuth, (req, res) => {
   const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
+  const currentUser = db.prepare('SELECT username FROM app_users WHERE id = ?').get(req.session.userId);
 
   render(res, 'settings', {
     subscriptionName,
+    adminUsername: currentUser?.username || '',
     message: req.query.message || '',
     error: req.query.error || ''
   });
@@ -903,6 +1010,34 @@ app.post('/settings', requireAuth, (req, res) => {
         value = excluded.value,
         updated_at = CURRENT_TIMESTAMP
     `).run('subscription_name', subscriptionName);
+
+    const currentPassword = String(req.body.current_password || '');
+    const newUsername = String(req.body.admin_username || '').trim();
+    const newPassword = String(req.body.new_password || '');
+    const newPassword2 = String(req.body.new_password_confirm || '');
+    const wantsAccountChange = Boolean(newUsername || newPassword || currentPassword || newPassword2);
+
+    if (wantsAccountChange) {
+      const user = db.prepare('SELECT * FROM app_users WHERE id = ?').get(req.session.userId);
+      if (!user) throw new Error('Администратор не найден');
+      if (!bcrypt.compareSync(currentPassword, user.password_hash)) {
+        throw new Error('Текущий пароль указан неверно');
+      }
+
+      const finalUsername = newUsername || user.username;
+      const owner = db.prepare('SELECT id FROM app_users WHERE username = ? AND id != ?').get(finalUsername, user.id);
+      if (owner) throw new Error('Такой логин администратора уже существует');
+
+      let finalHash = user.password_hash;
+      if (newPassword) {
+        if (newPassword.length < 8) throw new Error('Новый пароль должен быть минимум 8 символов');
+        if (newPassword !== newPassword2) throw new Error('Новый пароль и повтор не совпадают');
+        finalHash = bcrypt.hashSync(newPassword, 10);
+      }
+
+      db.prepare('UPDATE app_users SET username = ?, password_hash = ? WHERE id = ?')
+        .run(finalUsername, finalHash, user.id);
+    }
 
     res.redirect('/settings?message=' + encodeURIComponent('Настройки сохранены'));
   } catch (err) {
@@ -1133,9 +1268,9 @@ app.post('/clients', requireAuth, async (req, res) => {
     const subSlug = sharedSubId;
 
     const clientInfo = db.prepare(`
-      INSERT INTO clients (login, display_name, uuid, sub_slug, duration_days, traffic_gb)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(cleanLogin, cleanDisplayName, uuid, subSlug, cleanDurationDays, cleanTrafficGb);
+      INSERT INTO clients (login, display_name, uuid, sub_slug, duration_days, traffic_gb, limit_ip, expiry_time)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(cleanLogin, cleanDisplayName, uuid, subSlug, cleanDurationDays, cleanTrafficGb, cleanLimitIp, expiryTime);
 
     const clientId = clientInfo.lastInsertRowid;
 
@@ -1148,6 +1283,9 @@ app.post('/clients', requireAuth, async (req, res) => {
       const inbound = await getInbound(node);
       const settings = safeParseJsonField(inbound.settings, {});
       const clientEmail = cleanLogin;
+      const nodeTrafficRaw = req.body[`node_traffic_gb_${node.id}`];
+      const nodeTrafficGb = String(nodeTrafficRaw || '').trim() === '' ? cleanTrafficGb : Math.max(0, Number(nodeTrafficRaw || 0));
+      const nodeTotalGbBytes = toTotalGbBytes(nodeTrafficGb);
 
       const clientPayload = {
         id: Number(node.inbound_id),
@@ -1157,12 +1295,12 @@ app.post('/clients', requireAuth, async (req, res) => {
             email: clientEmail,
             flow: settings.clients?.[0]?.flow || '',
             limitIp: cleanLimitIp,
-            totalGB: totalGbBytes,
+            totalGB: nodeTotalGbBytes,
             expiryTime,
             enable: true,
             tgId: '',
             subId: sharedSubId,
-            reset: cleanDurationDays > 0 && cleanTrafficGb > 0 ? cleanDurationDays : 0
+            reset: cleanDurationDays > 0 && nodeTrafficGb > 0 ? cleanDurationDays : 0
           }]
         })
       };
@@ -1177,10 +1315,11 @@ app.post('/clients', requireAuth, async (req, res) => {
           node_id,
           remote_email,
           remote_uuid,
-          remote_sub_url
+          remote_sub_url,
+          traffic_gb
         )
-        VALUES (?, ?, ?, ?, ?)
-      `).run(clientId, node.id, clientEmail, uuid, subUrl);
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(clientId, node.id, clientEmail, uuid, subUrl, nodeTrafficGb);
     }
 
     res.redirect('/clients?message=' + encodeURIComponent('Клиент создан на выбранных узлах'));
@@ -1330,10 +1469,11 @@ app.post('/clients/:id/sync', requireAuth, async (req, res) => {
           node_id,
           remote_email,
           remote_uuid,
-          remote_sub_url
+          remote_sub_url,
+          traffic_gb
         )
-        VALUES (?, ?, ?, ?, ?)
-      `).run(clientId, node.id, clientEmail, client.uuid, subUrl);
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(clientId, node.id, clientEmail, client.uuid, subUrl, 0);
     }
 
     res.redirect(`/clients/${clientId}`);
@@ -1369,8 +1509,81 @@ app.get('/clients/:id', requireAuth, async (req, res) => {
     subscription: lines.join('\n'),
     baseUrl: BASE_URL,
     sourceSubUrl,
-    nodes
+    nodes,
+    message: req.query.message || '',
+    error: req.query.error || ''
   });
+});
+
+app.post('/clients/:id/edit', requireAuth, async (req, res) => {
+  try {
+    const clientId = Number(req.params.id);
+    const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+    if (!client) throw new Error('Клиент не найден');
+
+    const login = String(req.body.login || '').trim() || client.login;
+    const displayName = String(req.body.display_name || login).trim() || login;
+    const limitIp = Math.max(1, Number(req.body.limit_ip || client.limit_ip || 1));
+    const durationDays = Math.max(0, Number(req.body.duration_days || 0));
+    const trafficGb = Math.max(0, Number(req.body.traffic_gb || 0));
+    const expiryTime = durationDays > 0 ? Date.now() + durationDays * 24 * 60 * 60 * 1000 : 0;
+
+    const loginOwner = db.prepare('SELECT id FROM clients WHERE login = ? AND id != ?').get(login, clientId);
+    if (loginOwner) throw new Error('Такой логин уже существует');
+
+    db.prepare(`
+      UPDATE clients
+      SET login = ?, display_name = ?, limit_ip = ?, duration_days = ?, traffic_gb = ?, expiry_time = ?
+      WHERE id = ?
+    `).run(login, displayName, limitIp, durationDays, trafficGb, expiryTime, clientId);
+
+    const updatedClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+    const mappings = db.prepare('SELECT * FROM client_nodes WHERE client_id = ?').all(clientId);
+
+    for (const map of mappings) {
+      const raw = req.body[`node_traffic_gb_${map.node_id}`];
+      const nodeTrafficGb = String(raw || '').trim() === '' ? trafficGb : Math.max(0, Number(raw || 0));
+      try {
+        const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(map.node_id);
+        if (!node) continue;
+        await updateClientOnNode(node, map, updatedClient, {
+          email: login,
+          limit_ip: limitIp,
+          duration_days: durationDays,
+          traffic_gb: nodeTrafficGb,
+          expiry_time: expiryTime
+        });
+      } catch (err) {
+        console.error('Update client node failed:', err.message);
+      }
+    }
+
+    res.redirect('/clients/' + clientId + '?message=' + encodeURIComponent('Клиент обновлён'));
+  } catch (err) {
+    res.redirect('/clients/' + req.params.id + '?error=' + encodeURIComponent(String(err.message || err)));
+  }
+});
+
+app.post('/clients/:id/extend', requireAuth, async (req, res) => {
+  try {
+    const clientId = Number(req.params.id);
+    const days = Math.max(1, Number(req.body.days || 30));
+    const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+    if (!client) throw new Error('Клиент не найден');
+
+    const base = client.expiry_time && client.expiry_time > Date.now() ? client.expiry_time : Date.now();
+    const expiryTime = base + days * 24 * 60 * 60 * 1000;
+    const durationDays = Math.max(0, Number(client.duration_days || days));
+
+    db.prepare('UPDATE clients SET expiry_time = ?, duration_days = ? WHERE id = ?').run(expiryTime, durationDays, clientId);
+
+    const updatedClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+    await updateClientEverywhere(updatedClient, { expiry_time: expiryTime, duration_days: durationDays });
+
+    res.redirect('/dashboard?message=' + encodeURIComponent('Клиент продлён'));
+  } catch (err) {
+    res.redirect('/dashboard?error=' + encodeURIComponent(String(err.message || err)));
+  }
 });
 
 app.post('/clients/:id/delete', requireAuth, async (req, res) => {
@@ -1411,6 +1624,272 @@ app.get('/sub/:slug', async (req, res) => {
   res.send(lines.join('\n'));
 });
 
+
+function parseVlessLineToOutbound(line, index = 0) {
+  const url = new URL(line);
+  const q = url.searchParams;
+  const tag = index === 0 ? 'proxy' : `proxy-${index + 1}`;
+  const network = q.get('type') || 'tcp';
+  const security = q.get('security') || 'reality';
+  const flow = q.get('flow') || '';
+  const fp = q.get('fp') || 'chrome';
+  const pbk = q.get('pbk') || '';
+  const sni = q.get('sni') || '';
+  const sid = q.get('sid') || '';
+  const spx = q.get('spx') || '/';
+
+  const user = {
+    id: decodeURIComponent(url.username || ''),
+    encryption: 'none',
+    level: 8,
+    security: 'auto'
+  };
+
+  if (flow) user.flow = flow;
+
+  const outbound = {
+    tag,
+    protocol: 'vless',
+    settings: {
+      vnext: [{
+        address: url.hostname,
+        port: Number(url.port || 443),
+        users: [user]
+      }]
+    },
+    streamSettings: {
+      network,
+      security,
+      tcpSettings: {
+        header: { type: 'none' }
+      }
+    },
+    mux: {
+      enabled: false,
+      concurrency: -1,
+      xudpConcurrency: 8,
+      xudpProxyUDP443: ''
+    }
+  };
+
+  if (security === 'reality') {
+    outbound.streamSettings.realitySettings = {
+      show: false,
+      fingerprint: fp,
+      publicKey: pbk,
+      serverName: sni,
+      shortId: sid,
+      spiderX: spx || '/',
+      allowInsecure: false
+    };
+  }
+
+  return outbound;
+}
+
+function buildHappJsonConfig(client, lines, subscriptionName) {
+  const proxyOutbounds = lines
+    .filter(line => String(line).startsWith('vless://'))
+    .map((line, index) => parseVlessLineToOutbound(line, index));
+
+  if (!proxyOutbounds.length) {
+    proxyOutbounds.push({
+      tag: 'proxy',
+      protocol: 'freedom',
+      settings: { domainStrategy: 'UseIP' }
+    });
+  }
+
+  return {
+    dns: {
+      hosts: {
+        'cloudflare-dns.com': '1.1.1.1',
+        'dns.google': '8.8.8.8'
+      },
+      queryStrategy: 'UseIPv4',
+      servers: [
+        'https://cloudflare-dns.com/dns-query',
+        'https://dns.google/dns-query',
+        '1.1.1.1',
+        '8.8.8.8'
+      ],
+      tag: 'dns_out'
+    },
+    fakedns: [{
+      ipPool: '198.18.0.0/15',
+      poolSize: 10000
+    }],
+    inbounds: [
+      {
+        tag: 'socks',
+        port: 10808,
+        protocol: 'socks',
+        settings: {
+          auth: 'noauth',
+          udp: true,
+          userLevel: 8
+        },
+        sniffing: {
+          enabled: true,
+          destOverride: ['http', 'tls', 'fakedns']
+        }
+      },
+      {
+        tag: 'http',
+        port: 10809,
+        protocol: 'http',
+        settings: {
+          userLevel: 8
+        },
+        sniffing: {
+          enabled: true,
+          destOverride: ['http', 'tls']
+        }
+      }
+    ],
+    log: {
+      loglevel: 'warning'
+    },
+    outbounds: [
+      ...proxyOutbounds,
+      {
+        tag: 'direct',
+        protocol: 'freedom',
+        settings: {
+          domainStrategy: 'UseIP'
+        }
+      },
+      {
+        tag: 'block',
+        protocol: 'blackhole',
+        settings: {
+          response: { type: 'http' }
+        }
+      }
+    ],
+    policy: {
+      levels: {
+        '0': {
+          statsUserDownlink: true,
+          statsUserUplink: true
+        },
+        '8': {
+          connIdle: 300,
+          downlinkOnly: 1,
+          handshake: 4,
+          uplinkOnly: 1
+        }
+      },
+      system: {
+        statsInboundDownlink: true,
+        statsInboundUplink: true,
+        statsOutboundDownlink: true,
+        statsOutboundUplink: true
+      }
+    },
+    remarks: subscriptionName || client.display_name || client.login,
+    routing: {
+      domainStrategy: 'IPIfNonMatch',
+      rules: [
+        {
+          type: 'field',
+          domain: ['geosite:category-ads-all'],
+          outboundTag: 'block'
+        },
+        {
+          type: 'field',
+          domain: [
+            'geosite:youtube',
+            'domain:youtube.com',
+            'domain:youtu.be',
+            'domain:googlevideo.com',
+            'domain:ytimg.com',
+            'domain:ggpht.com',
+
+            'geosite:facebook',
+            'geosite:instagram',
+            'geosite:meta',
+            'domain:facebook.com',
+            'domain:fbcdn.net',
+            'domain:instagram.com',
+            'domain:cdninstagram.com',
+
+            'geosite:whatsapp',
+            'domain:whatsapp.com',
+            'domain:whatsapp.net',
+
+            'geosite:telegram',
+            'geoip:telegram',
+            'domain:telegram.org',
+            'domain:t.me',
+            'domain:telegra.ph',
+
+            'geosite:github',
+            'domain:github.com',
+            'domain:githubusercontent.com',
+            'domain:githubassets.com',
+            'domain:raw.githubusercontent.com',
+
+            'geosite:openai',
+            'domain:openai.com',
+            'domain:chat.openai.com',
+            'domain:oaistatic.com',
+            'domain:oaiusercontent.com',
+            'domain:auth0.com'
+          ],
+          outboundTag: 'proxy'
+        },
+        {
+          type: 'field',
+          domain: [
+            'geosite:private',
+            'geosite:category-ru',
+            'geosite:apple',
+            'geosite:apple-pki',
+            'geosite:huawei',
+            'geosite:xiaomi',
+            'geosite:category-android-app-download',
+            'geosite:f-droid',
+            'domain:ozon.ru',
+            'domain:wildberries.ru',
+            'domain:wb.ru',
+            'domain:yandex.ru',
+            'domain:ya.ru',
+            'domain:vk.com',
+            'domain:gosuslugi.ru',
+            'domain:sber.ru',
+            'domain:tbank.ru',
+            'domain:alfabank.ru',
+            'domain:vtb.ru',
+            'domain:mail.ru'
+          ],
+          outboundTag: 'direct'
+        },
+        {
+          type: 'field',
+          ip: ['geoip:ru', 'geoip:private'],
+          outboundTag: 'direct'
+        },
+        {
+          type: 'field',
+          network: 'tcp,udp',
+          outboundTag: 'direct'
+        }
+      ]
+    },
+    stats: {},
+    happ: {
+      routingTitle: `${subscriptionName || 'AMG'} routing`,
+      pingType: 'tcp',
+      pingResult: 'icon',
+      subscriptionUpdateIntervalHours: 1,
+      updateOnLaunch: true,
+      connectOnLaunch: true,
+      preferredMode: 'proxy'
+    }
+  };
+}
+
 app.get('/json/:slug', async (req, res) => {
   const client = db.prepare('SELECT * FROM clients WHERE sub_slug = ? AND enabled = 1').get(req.params.slug);
 
@@ -1420,14 +1899,11 @@ app.get('/json/:slug', async (req, res) => {
 
   const lines = await buildSubscriptionLines(client, true);
   const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
+  const config = buildHappJsonConfig(client, lines, subscriptionName);
 
-  res.json({
-    name: subscriptionName,
-    slug: client.sub_slug,
-    login: client.login,
-    count: lines.length,
-    subscriptions: lines
-  });
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(subscriptionName + '.json')}`);
+  res.json(config);
 });
 
 

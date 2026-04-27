@@ -1,12 +1,7 @@
-<%- include('partials_header', { pageTitle: 'Главная', pageSubtitle: 'Обзор узлов и общей подписки', activePage: 'dashboard' }) %>
-<%
-  function flagIcon(code) {
-    const cc = String(code || '').toLowerCase();
-    if (!cc) return '';
-    return '<img class="flag-icon" src="https://flagcdn.com/w20/' + cc + '.png" alt="' + cc.toUpperCase() + '" loading="lazy">';
-  }
-%>
+<%- include('partials_header', { pageTitle: 'Главная', pageSubtitle: 'Обзор узлов, клиентов и сроков действия', activePage: 'dashboard' }) %>
 
+<% if (message) { %><div class="alert ok"><%= message %></div><% } %>
+<% if (error) { %><div class="alert err"><%= error %></div><% } %>
 
 <div class="grid">
   <section class="stats-card span-3">
@@ -27,13 +22,45 @@
   </section>
 
   <section class="card span-12">
-    <h2>Как это работает</h2>
-    <ol class="list-steps">
-      <li>Добавляешь сюда свои 3x-ui узлы.</li>
-      <li>Для каждого узла указываешь inbound ID, куда надо добавлять клиентов.</li>
-      <li>Создаёшь клиента один раз — панель создаёт его на выбранных узлах.</li>
-      <li>Общая подписка доступна по ссылке вида <span class="code-inline"><%= baseUrl %>/sub/SLUG</span>.</li>
-    </ol>
+    <h2>Сроки заканчиваются в ближайшие 7 дней</h2>
+
+    <% if (!expiringClients || !expiringClients.length) { %>
+      <p class="muted">На ближайшую неделю клиентов с истекающим сроком нет.</p>
+    <% } else { %>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Клиент</th>
+              <th>Логин</th>
+              <th>Истекает</th>
+              <th>Осталось</th>
+              <th>Продлить</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% expiringClients.forEach(client => {
+              const expires = Number(client.expiry_time || 0);
+              const leftDays = expires > now ? Math.ceil((expires - now) / 86400000) : 0;
+              const dateText = expires ? new Date(expires).toLocaleDateString('ru-RU') : '-';
+            %>
+              <tr>
+                <td><a href="/clients/<%= client.id %>"><%= client.display_name %></a></td>
+                <td><%= client.login %></td>
+                <td><%= dateText %></td>
+                <td><%= leftDays %> дн.</td>
+                <td>
+                  <form method="post" action="/clients/<%= client.id %>/extend" class="inline-form extend-form">
+                    <input name="days" type="number" min="1" value="30" />
+                    <button type="submit">Продлить</button>
+                  </form>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
   </section>
 
   <section class="card span-12">
@@ -42,9 +69,13 @@
       <table>
         <thead><tr><th>Имя</th><th>Статус</th></tr></thead>
         <tbody>
-          <% nodes.forEach(node => { %>
+          <% nodes.forEach(node => {
+            const suffix = (node.label_suffix || '').trim();
+            const baseName = node.country_name_ru || node.name;
+            const displayName = suffix ? (/^\d+$/.test(suffix) ? `${baseName}-${suffix}` : `${baseName} ${suffix}`) : baseName;
+          %>
             <tr>
-              <td><%- flagIcon(node.country_code) %> <%= node.country_name_ru || node.name %><%= node.label_suffix ? (/^\d+$/.test(node.label_suffix) ? '-' + node.label_suffix : ' ' + node.label_suffix) : '' %></td>
+              <td><%= displayName %></td>
               <td><span class="badge <%= node.last_status || 'unknown' %>"><%= node.last_status || 'unknown' %></span></td>
             </tr>
           <% }) %>

@@ -1,14 +1,20 @@
-<%- include('partials_header') %>
+<%- include('partials_header', { pageTitle: client.display_name, pageSubtitle: 'Детали и редактирование клиента', activePage: 'clients' }) %>
 <%
   function flagIcon(code) {
     const cc = String(code || '').toLowerCase();
     if (!cc) return '';
     return '<img class="flag-icon" src="https://flagcdn.com/w20/' + cc + '.png" alt="' + cc.toUpperCase() + '" loading="lazy">';
   }
+  function nodeName(node) {
+    const suffix = (node.label_suffix || '').trim();
+    const baseName = node.country_name_ru || node.node_name || node.name;
+    return suffix ? (/^\d+$/.test(suffix) ? `${baseName}-${suffix}` : `${baseName} ${suffix}`) : baseName;
+  }
+  const expiryText = client.expiry_time && client.expiry_time > 0 ? new Date(Number(client.expiry_time)).toLocaleDateString('ru-RU') : 'без срока';
 %>
 
-
-<h1><%= client.display_name %></h1>
+<% if (message) { %><div class="alert ok"><%= message %></div><% } %>
+<% if (error) { %><div class="alert err"><%= error %></div><% } %>
 
 <div id="toast" class="toast">Скопировано</div>
 
@@ -17,19 +23,16 @@
   <p><strong>UUID:</strong> <code><%= client.uuid %></code></p>
   <p><strong>Slug / subId:</strong> <code><%= client.sub_slug %></code></p>
   <p><strong>Лимит:</strong> <%= client.traffic_gb && client.traffic_gb > 0 ? client.traffic_gb + ' ГБ' : 'без лимита' %> / <%= client.duration_days && client.duration_days > 0 ? client.duration_days + ' дней' : 'без срока' %></p>
+  <p><strong>Дата окончания:</strong> <%= expiryText %></p>
 
   <p>
     <strong>Общая SUB подписка агрегатора:</strong><br>
-    <a href="<%= baseUrl %>/sub/<%= client.sub_slug %>" target="_blank">
-      <%= baseUrl %>/sub/<%= client.sub_slug %>
-    </a>
+    <a href="<%= baseUrl %>/sub/<%= client.sub_slug %>" target="_blank"><%= baseUrl %>/sub/<%= client.sub_slug %></a>
   </p>
 
   <p>
     <strong>JSON подписка агрегатора:</strong><br>
-    <a href="<%= baseUrl %>/json/<%= client.sub_slug %>" target="_blank">
-      <%= baseUrl %>/json/<%= client.sub_slug %>
-    </a>
+    <a href="<%= baseUrl %>/json/<%= client.sub_slug %>" target="_blank"><%= baseUrl %>/json/<%= client.sub_slug %></a>
   </p>
 
   <button type="button" class="link-btn" onclick="copySubLink('<%= baseUrl %>/sub/<%= client.sub_slug %>', this)">Скопировать SUB</button>
@@ -39,34 +42,76 @@
 </div>
 
 <div class="card">
-  <h2>Добавить клиента на другие узлы</h2>
+  <h2>Редактировать клиента</h2>
+  <form method="post" action="/clients/<%= client.id %>/edit">
+    <div class="form-grid">
+      <div class="field half">
+        <label>Имя клиента</label>
+        <input name="display_name" value="<%= client.display_name %>" required />
+      </div>
+      <div class="field half">
+        <label>Логин / Email в 3x-ui</label>
+        <input name="login" value="<%= client.login %>" required />
+      </div>
+      <div class="field half">
+        <label>Лимит IP</label>
+        <input name="limit_ip" type="number" min="1" value="<%= client.limit_ip || 1 %>" />
+      </div>
+      <div class="field half">
+        <label>Новый срок в днях</label>
+        <input name="duration_days" type="number" min="0" value="<%= client.duration_days || 0 %>" />
+        <small class="hint">0 = без срока. При сохранении срок считается заново от текущего момента.</small>
+      </div>
+      <div class="field half">
+        <label>Общий лимит трафика, ГБ</label>
+        <input name="traffic_gb" type="number" min="0" step="1" value="<%= client.traffic_gb || 0 %>" />
+        <small class="hint">0 = без лимита.</small>
+      </div>
+    </div>
 
-  <form method="post" action="/clients/<%= client.id %>/sync">
-    <div class="checkbox-list">
-      <% nodes.forEach(node => {
-        const suffix = (node.label_suffix || '').trim();
-        const baseName = node.country_name_ru || node.name;
-        const displayName = suffix
-          ? (/^\d+$/.test(suffix) ? `${baseName}-${suffix}` : `${baseName} ${suffix}`)
-          : baseName;
-      %>
-        <label class="checkbox-item">
-          <input type="checkbox" name="node_ids" value="<%= node.id %>" />
+    <h3>Лимиты по узлам</h3>
+    <p class="muted">Если поле узла пустое, используется общий лимит. Если указать число — оно будет приоритетом для этого узла.</p>
+    <div class="checkbox-list node-list">
+      <% mappings.forEach(row => { %>
+        <label class="checkbox-item node-quota-row readonly">
           <span class="meta">
-            <strong><%- flagIcon(node.country_code) %> <%= displayName %></strong>
-            <small>inbound <%= node.inbound_id %></small>
+            <strong><%- flagIcon(row.country_code) %> <%= nodeName(row) %></strong>
+            <small>inbound <%= row.inbound_id %></small>
+          </span>
+          <span class="node-quota-field">
+            <input name="node_traffic_gb_<%= row.node_id %>" type="number" min="0" step="1" value="<%= row.traffic_gb || '' %>" placeholder="ГБ" />
           </span>
         </label>
       <% }) %>
     </div>
 
+    <div class="actions">
+      <button type="submit">Сохранить изменения</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Добавить клиента на другие узлы</h2>
+  <form method="post" action="/clients/<%= client.id %>/sync">
+    <div class="checkbox-list">
+      <% nodes.forEach(node => {
+        const suffix = (node.label_suffix || '').trim();
+        const baseName = node.country_name_ru || node.name;
+        const displayName = suffix ? (/^\d+$/.test(suffix) ? `${baseName}-${suffix}` : `${baseName} ${suffix}`) : baseName;
+      %>
+        <label class="checkbox-item">
+          <input type="checkbox" name="node_ids" value="<%= node.id %>" />
+          <span class="meta"><strong><%- flagIcon(node.country_code) %> <%= displayName %></strong><small>inbound <%= node.inbound_id %></small></span>
+        </label>
+      <% }) %>
+    </div>
     <button type="submit" style="margin-top:10px;">Добавить на выбранные узлы</button>
   </form>
 </div>
 
 <div class="card">
   <h2>Удаление клиента</h2>
-
   <form method="post" action="/clients/<%= client.id %>/delete" onsubmit="return confirm('Удалить клиента выбранным способом?')">
     <label>Режим удаления</label>
     <select name="delete_mode">
@@ -74,7 +119,6 @@
       <option value="secondary">Из агрегатора и вторичных узлов</option>
       <option value="all">Из агрегатора и всех узлов</option>
     </select>
-
     <button class="danger" type="submit">Удалить клиента</button>
   </form>
 </div>
@@ -83,35 +127,16 @@
   <h2>Узлы клиента</h2>
   <div class="table-wrap">
     <table>
-      <tr>
-        <th>Узел</th>
-        <th>Статус</th>
-        <th>Email в 3x-ui</th>
-        <th>UUID</th>
-        <th>Ссылка узла</th>
-      </tr>
-
+      <tr><th>Узел</th><th>Статус</th><th>Email в 3x-ui</th><th>UUID</th><th>Лимит узла</th><th>Ссылка узла</th></tr>
       <% mappings.forEach(row => { %>
         <tr>
-          <td>
-            <% 
-              const suffix = (row.label_suffix || '').trim();
-              const baseName = row.country_name_ru || row.node_name;
-              const displayName = suffix
-                ? (/^\d+$/.test(suffix) ? `${baseName}-${suffix}` : `${baseName} ${suffix}`)
-                : baseName;
-            %>
-            <%- flagIcon(row.country_code) %> <%= displayName %>
-          </td>
+          <td><%- flagIcon(row.country_code) %> <%= nodeName(row) %></td>
           <td><span class="badge <%= row.last_status %>"><%= row.last_status %></span></td>
           <td><%= row.remote_email %></td>
           <td><code><%= row.remote_uuid %></code></td>
+          <td><%= row.traffic_gb && row.traffic_gb > 0 ? row.traffic_gb + ' ГБ' : 'общий/∞' %></td>
           <td>
-            <% if (row.remote_sub_url) { %>
-              <a href="<%= row.remote_sub_url %>" target="_blank"><%= row.remote_sub_url %></a>
-            <% } else { %>
-              <span>Нет ссылки</span>
-            <% } %>
+            <% if (row.remote_sub_url) { %><a href="<%= row.remote_sub_url %>" target="_blank"><%= row.remote_sub_url %></a><% } else { %><span>Нет ссылки</span><% } %>
           </td>
         </tr>
       <% }) %>

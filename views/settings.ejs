@@ -1,4 +1,4 @@
-<%- include('partials_header', { pageTitle: 'Настройки', pageSubtitle: 'Параметры общей подписки агрегатора', activePage: 'settings' }) %>
+<%- include('partials_header', { pageTitle: 'Настройки', pageSubtitle: 'Параметры подписки, админки и безопасности', activePage: 'settings' }) %>
 
 <% if (message) { %><div class="alert ok"><%= message %></div><% } %>
 <% if (error) { %><div class="alert err"><%= error %></div><% } %>
@@ -10,12 +10,32 @@
       <div class="form-grid">
         <div class="field">
           <label>Название подписки</label>
-          <input
-            name="subscription_name"
-            value="<%= subscriptionName %>"
-            placeholder="My VPN"
-            required
-          />
+          <input name="subscription_name" value="<%= subscriptionName %>" placeholder="AMG" required />
+        </div>
+
+        <div class="field">
+          <h3 style="margin:10px 0 0;">Доступ к админке</h3>
+          <small class="hint">Для смены логина или пароля обязательно укажи текущий пароль.</small>
+        </div>
+
+        <div class="field half">
+          <label>Логин администратора</label>
+          <input name="admin_username" value="<%= adminUsername || '' %>" autocomplete="username" />
+        </div>
+
+        <div class="field half">
+          <label>Текущий пароль</label>
+          <input name="current_password" type="password" autocomplete="current-password" placeholder="Нужен только для смены логина/пароля" />
+        </div>
+
+        <div class="field half">
+          <label>Новый пароль</label>
+          <input name="new_password" type="password" autocomplete="new-password" placeholder="Минимум 8 символов" />
+        </div>
+
+        <div class="field half">
+          <label>Повтор нового пароля</label>
+          <input name="new_password_confirm" type="password" autocomplete="new-password" />
         </div>
       </div>
 
@@ -26,19 +46,23 @@
   </section>
 
   <section class="card span-6">
-    <h2>Что это меняет</h2>
+    <h2>Безопасность</h2>
     <div class="kv-list">
       <div class="kv-item">
-        <strong>Имя подписки</strong>
-        <div class="muted">Это имя используется в общей подписке агрегатора.</div>
+        <strong>Сессия до закрытия браузера</strong>
+        <div class="muted">Cookie сессии больше не хранится 7 дней. После закрытия браузера вход потребуется снова.</div>
       </div>
       <div class="kv-item">
-        <strong>Без правки .env</strong>
-        <div class="muted">Тебе больше не нужно менять SUBSCRIPTION_NAME вручную в .env.</div>
+        <strong>Автовыход через 30 минут</strong>
+        <div class="muted">Если панель не используется 30 минут, сессия сбрасывается.</div>
       </div>
       <div class="kv-item">
-        <strong>Новые открытия</strong>
-        <div class="muted">После сохранения новые открытия подписки будут использовать новое имя.</div>
+        <strong>Привязка к IP</strong>
+        <div class="muted">Если IP изменился, панель автоматически попросит войти заново.</div>
+      </div>
+      <div class="kv-item">
+        <strong>JSON-подписка</strong>
+        <div class="muted">/json/SLUG отдаёт Happ/Xray JSON с маршрутизацией: YouTube, Meta, WhatsApp, Telegram, GitHub и OpenAI через Proxy, остальное Direct.</div>
       </div>
     </div>
   </section>
