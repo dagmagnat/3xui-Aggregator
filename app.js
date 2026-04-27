@@ -1861,7 +1861,6 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
         statsOutboundUplink: true
       }
     },
-    remarks: subscriptionName || DEFAULT_SUBSCRIPTION_NAME,
     routing: {
       domainStrategy: 'IPIfNonMatch',
       rules: [
