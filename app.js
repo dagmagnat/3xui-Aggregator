@@ -131,6 +131,38 @@ const DEFAULT_SUBSCRIPTION_NAME = process.env.SUBSCRIPTION_NAME || 'VPN';
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
 
+const FETCH_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS || 12000);
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetchWithTimeout(url, {
+      ...options,
+      signal: options.signal || controller.signal
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function setSubscriptionNoCacheHeaders(res, subscriptionName = 'VPN', ext = 'txt') {
+  const safeName = String(subscriptionName || 'VPN').trim() || 'VPN';
+  const base64Title = Buffer.from(safeName).toString('base64');
+  const fileName = `${safeName}.${ext}`;
+
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('Profile-Title', `base64:${base64Title}`);
+  res.setHeader('Subscription-Title', `base64:${base64Title}`);
+  res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+}
+
+
 app.set('view engine', 'ejs');
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static('public'));
@@ -344,7 +376,7 @@ async function loginNode(node) {
     password
   });
 
-  const response = await fetch(`${rootUrl}/login`, {
+  const response = await fetchWithTimeout(`${rootUrl}/login`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -367,7 +399,7 @@ async function loginNode(node) {
 async function apiGet(node, path) {
   const { rootUrl, cookie } = await loginNode(node);
 
-  const response = await fetch(`${rootUrl}${path}`, {
+  const response = await fetchWithTimeout(`${rootUrl}${path}`, {
     headers: {
       'Accept': 'application/json',
       'Cookie': cookie
@@ -401,7 +433,7 @@ async function apiPost(node, path, body, asForm = false) {
     payload = JSON.stringify(body);
   }
 
-  const response = await fetch(`${rootUrl}${path}`, {
+  const response = await fetchWithTimeout(`${rootUrl}${path}`, {
     method: 'POST',
     headers,
     body: payload
@@ -507,7 +539,7 @@ function decodeMaybeBase64Subscription(text) {
 }
 
 async function fetchSubscriptionLines(url) {
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     headers: {
       'User-Agent': 'Mozilla/5.0',
       'Accept': 'text/plain,*/*'
@@ -569,7 +601,6 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
 
   for (const row of rows) {
     try {
-      if (Number(row.enabled) !== 1) continue;
       if (!includeOffline && row.last_status === 'offline') continue;
 
       const inbound = await getInbound(row);
@@ -1196,27 +1227,6 @@ app.post('/nodes/:id/edit', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/nodes/:id/toggle', requireAuth, (req, res) => {
-  try {
-    const nodeId = Number(req.params.id);
-    const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId);
-    if (!node) {
-      return res.redirect('/nodes?error=' + encodeURIComponent('Узел не найден'));
-    }
-
-    const enabled = Number(node.enabled) === 1 ? 0 : 1;
-    db.prepare('UPDATE nodes SET enabled = ? WHERE id = ?').run(enabled, nodeId);
-
-    const msg = enabled
-      ? 'Узел включён. Он снова будет попадать в SUB/JSON подписки.'
-      : 'Узел отключён. Он больше не будет попадать в SUB/JSON подписки клиентов.';
-
-    res.redirect('/nodes?message=' + encodeURIComponent(msg));
-  } catch (err) {
-    res.redirect('/nodes?error=' + encodeURIComponent(String(err.message || err)));
-  }
-});
-
 app.post('/nodes/:id/delete', requireAuth, (req, res) => {
   db.prepare('DELETE FROM nodes WHERE id = ?').run(Number(req.params.id));
   res.redirect('/nodes?message=' + encodeURIComponent('Узел удалён'));
@@ -1698,12 +1708,8 @@ app.get('/sub/:slug', async (req, res) => {
   const lines = await buildSubscriptionLines(client, true);
   const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
 
-  const fileName = `${subscriptionName}.txt`;
-  const base64Title = Buffer.from(subscriptionName).toString('base64');
-
+  setSubscriptionNoCacheHeaders(res, subscriptionName, 'txt');
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`);
-  res.setHeader('Profile-Title', `base64:${base64Title}`);
 
   res.send(lines.join('\n'));
 });
@@ -1796,12 +1802,6 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
     });
   }
 
-  const profileRemark =
-    proxyOutbounds.find(outbound => outbound.remarks)?.remarks ||
-    getRemarkFromVlessLine(lines.find(line => String(line).startsWith('vless://')) || '') ||
-    subscriptionName ||
-    DEFAULT_SUBSCRIPTION_NAME;
-
   return {
     dns: {
       hosts: {
@@ -1852,7 +1852,6 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
     log: {
       loglevel: 'warning'
     },
-    remarks: profileRemark,
     outbounds: [
       ...proxyOutbounds,
       {
@@ -1890,6 +1889,7 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
         statsOutboundUplink: true
       }
     },
+    remarks: subscriptionName || DEFAULT_SUBSCRIPTION_NAME,
     routing: {
       domainStrategy: 'IPIfNonMatch',
       rules: [
@@ -2001,24 +2001,14 @@ app.get('/json/:slug', async (req, res) => {
 
   const lines = await buildSubscriptionLines(client, true);
   const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
-
-  // Happ показывает отдельные серверы в подписке только если JSON отдаёт
-  // несколько отдельных конфигураций. Поэтому для JSON делаем массив: 
-  // 1 VLESS-ссылка = 1 JSON-конфиг с remarks региона.
-  const vlessLines = lines.filter(line => String(line).startsWith('vless://'));
-  const configs = vlessLines.length
-    ? vlessLines.map(line => {
-        const nodeRemark = getRemarkFromVlessLine(line) || subscriptionName;
-        return buildHappJsonConfig(client, [line], nodeRemark);
-      })
-    : [buildHappJsonConfig(client, lines, subscriptionName)];
+  const config = buildHappJsonConfig(client, lines, subscriptionName);
 
   const base64Title = Buffer.from(subscriptionName).toString('base64');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(subscriptionName + '.json')}`);
   res.setHeader('Profile-Title', `base64:${base64Title}`);
   res.setHeader('Subscription-Title', `base64:${base64Title}`);
-  res.json(configs);
+  res.json(config);
 });
 
 
