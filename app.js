@@ -138,7 +138,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS)
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    return await fetchWithTimeout(url, {
+    return await fetch(url, {
       ...options,
       signal: options.signal || controller.signal
     });
@@ -601,6 +601,7 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
 
   for (const row of rows) {
     try {
+      if (Number(row.enabled) !== 1) continue;
       if (!includeOffline && row.last_status === 'offline') continue;
 
       const inbound = await getInbound(row);
@@ -759,113 +760,209 @@ async function syncClientsFromSourceNode(sourceNode) {
   const remoteClients = await importClientsFromNode(sourceNode);
 
   let imported = 0;
+  let updated = 0;
   let mappingsCreated = 0;
   let remoteCreated = 0;
+  let remoteUpdated = 0;
   let skipped = 0;
 
   for (const rc of remoteClients) {
     let clientRow = db.prepare('SELECT * FROM clients WHERE uuid = ?').get(rc.uuid);
+    const remoteTrafficGb = fromTotalGbBytes(rc.totalGB);
+    const remoteLogin = String(rc.email || '').trim() || 'imported';
 
     if (!clientRow) {
       let subSlug = rc.subId || randomUUID().replace(/-/g, '').slice(0, 16);
       const slugConflict = db.prepare('SELECT id FROM clients WHERE sub_slug = ?').get(subSlug);
       if (slugConflict) subSlug = subSlug + '-' + randomUUID().replace(/-/g, '').slice(0, 6);
-      const login = makeUniqueLogin(rc.email);
-      const displayName = rc.email;
+
+      const login = makeUniqueLogin(remoteLogin);
+      const displayName = remoteLogin;
 
       const clientInfo = db.prepare(`
-        INSERT INTO clients (login, display_name, uuid, sub_slug, duration_days, traffic_gb, limit_ip, expiry_time)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(login, displayName, rc.uuid, subSlug, 0, fromTotalGbBytes(rc.totalGB), rc.limitIp || 1, rc.expiryTime || 0);
+        INSERT INTO clients (
+          login,
+          display_name,
+          uuid,
+          sub_slug,
+          duration_days,
+          traffic_gb,
+          limit_ip,
+          expiry_time,
+          enabled
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        login,
+        displayName,
+        rc.uuid,
+        subSlug,
+        Number(rc.reset || 0),
+        remoteTrafficGb,
+        rc.limitIp || 1,
+        rc.expiryTime || 0,
+        rc.enable !== false ? 1 : 0
+      );
 
       clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientInfo.lastInsertRowid);
       imported++;
     } else {
+      let subSlug = clientRow.sub_slug;
       if (rc.subId && clientRow.sub_slug !== rc.subId) {
         const conflict = db.prepare('SELECT id FROM clients WHERE sub_slug = ? AND id != ?')
           .get(rc.subId, clientRow.id);
+        if (!conflict) subSlug = rc.subId;
+      }
 
-        if (!conflict) {
-          db.prepare('UPDATE clients SET sub_slug = ? WHERE id = ?').run(rc.subId, clientRow.id);
-          clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientRow.id);
-        }
+      const newLogin = makeUniqueLogin(remoteLogin, clientRow.id);
+      const changed =
+        clientRow.login !== newLogin ||
+        clientRow.display_name !== remoteLogin ||
+        clientRow.sub_slug !== subSlug ||
+        Number(clientRow.limit_ip || 0) !== Number(rc.limitIp || 1) ||
+        Number(clientRow.expiry_time || 0) !== Number(rc.expiryTime || 0) ||
+        Number(clientRow.traffic_gb || 0) !== Number(remoteTrafficGb || 0) ||
+        Number(clientRow.enabled || 0) !== (rc.enable !== false ? 1 : 0);
+
+      if (changed) {
+        db.prepare(`
+          UPDATE clients
+          SET
+            login = ?,
+            display_name = ?,
+            sub_slug = ?,
+            duration_days = ?,
+            traffic_gb = ?,
+            limit_ip = ?,
+            expiry_time = ?,
+            enabled = ?
+          WHERE id = ?
+        `).run(
+          newLogin,
+          remoteLogin,
+          subSlug,
+          Number(rc.reset || clientRow.duration_days || 0),
+          remoteTrafficGb,
+          rc.limitIp || 1,
+          rc.expiryTime || 0,
+          rc.enable !== false ? 1 : 0,
+          clientRow.id
+        );
+
+        clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientRow.id);
+        updated++;
       }
     }
 
     for (const node of allNodes) {
-      const alreadyExists = db.prepare(`
-        SELECT id FROM client_nodes
+      let existingMap = db.prepare(`
+        SELECT * FROM client_nodes
         WHERE client_id = ? AND node_id = ?
       `).get(clientRow.id, node.id);
 
-      if (alreadyExists) {
-        skipped++;
+      const clientEmail = remoteLogin;
+      const subUrl = buildNativeSubUrl(node, rc.subId || clientRow.sub_slug);
+
+      if (!existingMap) {
+        if (node.id !== sourceNode.id) {
+          let inbound;
+          let settings;
+
+          try {
+            inbound = await getInbound(node);
+            settings = safeParseJsonField(inbound.settings, {});
+          } catch (err) {
+            console.error(`Не удалось получить inbound узла ${node.id}:`, err.message);
+            continue;
+          }
+
+          const payload = {
+            id: Number(node.inbound_id),
+            settings: JSON.stringify({
+              clients: [{
+                id: rc.uuid,
+                email: clientEmail,
+                flow: rc.flow || settings.clients?.[0]?.flow || '',
+                limitIp: rc.limitIp || 1,
+                totalGB: Number(rc.totalGB || 0),
+                expiryTime: rc.expiryTime || 0,
+                enable: rc.enable !== false,
+                tgId: rc.tgId || '',
+                subId: rc.subId || clientRow.sub_slug,
+                reset: rc.reset || 0
+              }]
+            })
+          };
+
+          try {
+            await addClient(node, payload);
+            remoteCreated++;
+          } catch (err) {
+            console.error(`Не удалось добавить клиента ${rc.email} на узел ${node.id}:`, err.message);
+            continue;
+          }
+        }
+
+        db.prepare(`
+          INSERT OR IGNORE INTO client_nodes (
+            client_id,
+            node_id,
+            remote_email,
+            remote_uuid,
+            remote_sub_url,
+            traffic_gb
+          )
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(clientRow.id, node.id, clientEmail, rc.uuid, subUrl, remoteTrafficGb);
+
+        mappingsCreated++;
         continue;
       }
 
-      const clientEmail = rc.email;
-      let subUrl = rc.originalSub || buildNativeSubUrl(sourceNode, rc.subId);
+      const mapChanged =
+        existingMap.remote_email !== clientEmail ||
+        existingMap.remote_uuid !== rc.uuid ||
+        existingMap.remote_sub_url !== subUrl ||
+        Number(existingMap.traffic_gb || 0) !== Number(remoteTrafficGb || 0);
+
+      if (mapChanged) {
+        db.prepare(`
+          UPDATE client_nodes
+          SET remote_email = ?, remote_uuid = ?, remote_sub_url = ?, traffic_gb = ?
+          WHERE id = ?
+        `).run(clientEmail, rc.uuid, subUrl, remoteTrafficGb, existingMap.id);
+
+        existingMap = db.prepare('SELECT * FROM client_nodes WHERE id = ?').get(existingMap.id);
+        updated++;
+      }
 
       if (node.id !== sourceNode.id) {
-        let inbound;
-        let settings;
-
         try {
-          inbound = await getInbound(node);
-          settings = safeParseJsonField(inbound.settings, {});
+          await updateClientOnNode(node, existingMap, clientRow, {
+            email: clientEmail,
+            limit_ip: rc.limitIp || clientRow.limit_ip || 1,
+            duration_days: Number(rc.reset || clientRow.duration_days || 0),
+            traffic_gb: remoteTrafficGb,
+            expiry_time: rc.expiryTime || 0,
+            enabled: rc.enable !== false,
+            subId: rc.subId || clientRow.sub_slug
+          });
+          remoteUpdated++;
         } catch (err) {
-          console.error(`Не удалось получить inbound узла ${node.id}:`, err.message);
-          continue;
-        }
-
-        const payload = {
-          id: Number(node.inbound_id),
-          settings: JSON.stringify({
-            clients: [{
-              id: rc.uuid,
-              email: clientEmail,
-              flow: rc.flow || settings.clients?.[0]?.flow || '',
-              limitIp: rc.limitIp || 1,
-              totalGB: Number(rc.totalGB || 0),
-              expiryTime: rc.expiryTime || 0,
-              enable: rc.enable !== false,
-              tgId: rc.tgId || '',
-              subId: rc.subId,
-              reset: rc.reset || 0
-            }]
-          })
-        };
-
-        try {
-          await addClient(node, payload);
-          remoteCreated++;
-        } catch (err) {
-          console.error(`Не удалось добавить клиента ${rc.email} на узел ${node.id}:`, err.message);
+          console.error(`Не удалось обновить клиента ${rc.email} на узле ${node.id}:`, err.message);
         }
       } else {
-  subUrl = rc.originalSub || buildNativeSubUrl(sourceNode, rc.subId);
-}
-
-      db.prepare(`
-        INSERT OR IGNORE INTO client_nodes (
-          client_id,
-          node_id,
-          remote_email,
-          remote_uuid,
-          remote_sub_url,
-          traffic_gb
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(clientRow.id, node.id, clientEmail, rc.uuid, subUrl, fromTotalGbBytes(rc.totalGB));
-
-      mappingsCreated++;
+        skipped++;
+      }
     }
   }
 
   return {
     imported,
+    updated,
     mappingsCreated,
     remoteCreated,
+    remoteUpdated,
     skipped,
     totalSourceClients: remoteClients.length
   };
@@ -899,7 +996,7 @@ async function updateClientOnNode(node, map, client, opts = {}) {
   const limitIp = Math.max(1, Number(opts.limit_ip ?? client.limit_ip ?? current.limitIp ?? 1));
   const expiryTime = Math.max(0, Number(opts.expiry_time ?? client.expiry_time ?? current.expiryTime ?? 0));
   const email = String(opts.email || client.login || map.remote_email || current.email || '').trim();
-  const subId = current.subId || client.sub_slug || randomUUID().replace(/-/g, '').slice(0, 16);
+  const subId = opts.subId || current.subId || client.sub_slug || randomUUID().replace(/-/g, '').slice(0, 16);
 
   const payload = {
     id: Number(node.inbound_id),
@@ -1371,7 +1468,7 @@ app.post('/clients/import', requireAuth, async (req, res) => {
     const result = await syncClientsFromSourceNode(sourceNode);
 
     res.redirect('/clients?message=' + encodeURIComponent(
-      `Импорт завершён. Источник: ${result.totalSourceClients}, новых клиентов: ${result.imported}, создано на узлах: ${result.remoteCreated}, связей: ${result.mappingsCreated}`
+      `Импорт завершён. Источник: ${result.totalSourceClients}, новых: ${result.imported}, обновлено: ${result.updated}, создано на узлах: ${result.remoteCreated}, обновлено на узлах: ${result.remoteUpdated}, связей: ${result.mappingsCreated}`
     ));
   } catch (err) {
     res.redirect('/clients?error=' + encodeURIComponent(String(err.message || err)));
@@ -1388,7 +1485,7 @@ app.post('/clients/refresh-subscriptions', requireAuth, async (req, res) => {
     const result = await syncClientsFromSourceNode(sourceNode);
 
     res.redirect('/clients?message=' + encodeURIComponent(
-      `Синхронизация завершена. Новых клиентов: ${result.imported}, создано на узлах: ${result.remoteCreated}, связей: ${result.mappingsCreated}`
+      `Синхронизация завершена. Новых: ${result.imported}, обновлено: ${result.updated}, создано на узлах: ${result.remoteCreated}, обновлено на узлах: ${result.remoteUpdated}, связей: ${result.mappingsCreated}`
     ));
   } catch (err) {
     res.redirect('/clients?error=' + encodeURIComponent(String(err.message || err)));
@@ -1921,10 +2018,12 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
             'domain:whatsapp.net',
 
             'geosite:telegram',
-            'geoip:telegram',
             'domain:telegram.org',
             'domain:t.me',
             'domain:telegra.ph',
+            'domain:telegram.me',
+            'domain:tdesktop.com',
+            'domain:telegram-cdn.org',
 
             'geosite:github',
             'domain:github.com',
@@ -1938,6 +2037,13 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
             'domain:oaistatic.com',
             'domain:oaiusercontent.com',
             'domain:auth0.com'
+          ],
+          outboundTag: 'proxy'
+        },
+        {
+          type: 'field',
+          ip: [
+            'geoip:telegram'
           ],
           outboundTag: 'proxy'
         },
