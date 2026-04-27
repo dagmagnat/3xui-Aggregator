@@ -1578,8 +1578,16 @@ app.post('/clients/:id/edit', requireAuth, async (req, res) => {
       }
     }
 
+    const back = String(req.body.back || '/clients');
+    if (back === '/clients') {
+      return res.redirect('/clients?message=' + encodeURIComponent('Клиент обновлён'));
+    }
     res.redirect('/clients/' + clientId + '?message=' + encodeURIComponent('Клиент обновлён'));
   } catch (err) {
+    const back = String(req.body.back || '/clients');
+    if (back === '/clients') {
+      return res.redirect('/clients?error=' + encodeURIComponent(String(err.message || err)));
+    }
     res.redirect('/clients/' + req.params.id + '?error=' + encodeURIComponent(String(err.message || err)));
   }
 });
@@ -1600,8 +1608,19 @@ app.post('/clients/:id/extend', requireAuth, async (req, res) => {
     const updatedClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
     await updateClientEverywhere(updatedClient, { expiry_time: expiryTime, duration_days: durationDays });
 
+    const back = String(req.body.back || '/dashboard');
+    if (back === '/clients') {
+      return res.redirect('/clients?message=' + encodeURIComponent('Клиент продлён'));
+    }
+    if (back.includes(`/clients/${clientId}`)) {
+      return res.redirect(`/clients/${clientId}?message=${encodeURIComponent('Клиент продлён')}`);
+    }
     res.redirect('/dashboard?message=' + encodeURIComponent('Клиент продлён'));
   } catch (err) {
+    const back = String(req.body.back || '/dashboard');
+    if (back === '/clients') {
+      return res.redirect('/clients?error=' + encodeURIComponent(String(err.message || err)));
+    }
     res.redirect('/dashboard?error=' + encodeURIComponent(String(err.message || err)));
   }
 });

@@ -900,3 +900,109 @@ tbody tr:hover { background: rgba(255,255,255,.025); }
   .action-buttons { min-width: 0; }
   .btn-pair { min-width: 0; }
 }
+
+/* v7 table/button cleanup */
+.actions .secondary,
+.actions .danger,
+.actions button,
+.actions .link-btn {
+  min-width: 112px;
+  text-align: center;
+}
+.clients-card .table-wrap {
+  overflow-x: auto;
+}
+.clients-table {
+  table-layout: fixed;
+  min-width: 1180px;
+}
+.clients-table th,
+.clients-table td {
+  vertical-align: middle;
+}
+.clients-table .check-col { width: 48px; text-align: center; }
+.clients-table .link-col { width: 250px; }
+.clients-table .actions-col { width: 320px; }
+.btn-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+.btn-main,
+.btn-secondary,
+.btn-danger,
+.btn-qr {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 13px;
+  border: 1px solid transparent;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1;
+}
+.btn-main {
+  min-width: 150px;
+  background: #2388ff;
+  color: #fff;
+}
+.btn-secondary,
+.btn-qr {
+  background: rgba(255,255,255,.055);
+  color: #fff;
+  border-color: rgba(160,190,230,.22);
+}
+.btn-secondary { min-width: 112px; }
+.btn-danger {
+  min-width: 118px;
+  background: #ff5573;
+  color: #fff;
+}
+.btn-qr {
+  min-width: 58px;
+  padding: 0 14px;
+}
+.actions-stack {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+.actions-stack .inline-form { margin: 0; }
+.actions-stack .inline-form button { width: auto; }
+.bulk-row {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.bulk-row button { width: auto; }
+.editor-modal {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+}
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.soft-sep {
+  border: 0;
+  border-top: 1px solid rgba(160,190,230,.16);
+  margin: 18px 0;
+}
+.stretch-row input { flex: 1; min-width: 120px; }
+@media (max-width: 900px) {
+  .clients-table { min-width: 1040px; }
+  .clients-table .link-col { width: 220px; }
+  .clients-table .actions-col { width: 290px; }
+  .btn-main { min-width: 135px; }
+}

@@ -8,7 +8,15 @@
   function nodeName(node) {
     const suffix = (node.label_suffix || '').trim();
     const baseName = node.country_name_ru || node.name;
-    return suffix ? (/^\d+$/.test(suffix) ? `${baseName}-${suffix}` : `${baseName} ${suffix}`) : baseName;
+    return suffix ? (/^\d+$/.test(suffix) ? `${baseName}-${suffix}` : `${baseName} / ${suffix}`) : baseName;
+  }
+  function dateForInput(ts) {
+    if (!ts || Number(ts) <= 0) return '';
+    const d = new Date(Number(ts));
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   }
 %>
 
@@ -114,7 +122,7 @@
   </form>
 </div>
 
-<div class="card">
+<div class="card clients-card">
   <h2>Все клиенты</h2>
 
   <form method="get" action="/clients" class="search-form">
@@ -124,7 +132,7 @@
   </form>
 
   <form method="post" action="/clients/bulk-delete" onsubmit="return confirm('Удалить выбранных клиентов?')">
-    <div style="display:flex; gap:12px; align-items:end; flex-wrap:wrap; margin-bottom:14px;">
+    <div class="bulk-row">
       <div>
         <label>Режим удаления выбранных</label>
         <select name="delete_mode">
@@ -133,58 +141,126 @@
           <option value="all">Из агрегатора и всех узлов</option>
         </select>
       </div>
-      <button class="danger" type="submit" style="width:auto;">Удалить выбранных</button>
+      <button class="danger" type="submit">Удалить выбранных</button>
     </div>
 
     <div class="table-wrap">
-      <table>
-        <tr>
-          <th><input class="inline" type="checkbox" onclick="toggleAllClients(this)" /></th>
-          <th>ID</th>
-          <th>Имя</th>
-          <th>Логин</th>
-          <th>Лимит</th>
-          <th>Статус</th>
-          <th>Подписка</th>
-          <th>JSON</th>
-          <th>Действия</th>
-        </tr>
-
+      <table class="clients-table">
+        <thead>
+          <tr>
+            <th class="check-col"><input class="inline" type="checkbox" onclick="toggleAllClients(this)" /></th>
+            <th>ID</th>
+            <th>Имя</th>
+            <th>Логин</th>
+            <th>Лимит</th>
+            <th>Статус</th>
+            <th class="link-col">Подписка</th>
+            <th class="link-col">JSON</th>
+            <th class="actions-col">Действия</th>
+          </tr>
+        </thead>
+        <tbody>
         <% clients.forEach(client => {
           const subUrl = `${baseUrl}/sub/${client.sub_slug}`;
           const jsonUrl = `${baseUrl}/json/${client.sub_slug}`;
+          const clientEnabled = client.enabled !== 0;
         %>
           <tr>
-            <td><input class="inline client-check" type="checkbox" name="client_ids" value="<%= client.id %>" /></td>
+            <td class="check-col"><input class="inline client-check" type="checkbox" name="client_ids" value="<%= client.id %>" /></td>
             <td><%= client.id %></td>
-            <td><a href="/clients/<%= client.id %>"><%= client.display_name %></a></td>
+            <td><%= client.display_name %></td>
             <td><%= client.login %></td>
             <td>
               <% if (client.traffic_gb && client.traffic_gb > 0) { %><%= client.traffic_gb %> ГБ<% } else { %>∞<% } %>
               / <% if (client.duration_days && client.duration_days > 0) { %><%= client.duration_days %> дн.<% } else { %>∞<% } %>
             </td>
-            <td><span class="badge <%= client.enabled !== 0 ? 'online' : 'offline' %>"><%= client.enabled !== 0 ? 'Включён' : 'Отключён' %></span></td>
-            <td class="btn-pair">
-              <button type="button" class="link-btn" onclick="copySubLink('<%= subUrl %>', this)">Скопировать SUB</button>
-              <button type="button" class="link-btn secondary" onclick="showQr('<%= subUrl %>', '<%= client.login %> · SUB')">QR</button>
+            <td><span class="badge <%= clientEnabled ? 'online' : 'offline' %>"><%= clientEnabled ? 'Включён' : 'Отключён' %></span></td>
+            <td class="link-col">
+              <div class="btn-row">
+                <button type="button" class="btn-main" onclick="copySubLink('<%= subUrl %>', this)">Скопировать SUB</button>
+                <button type="button" class="btn-qr" onclick="showQr('<%= subUrl %>', '<%= client.login %> · SUB')">QR</button>
+              </div>
             </td>
-            <td class="btn-pair">
-              <button type="button" class="link-btn" onclick="copySubLink('<%= jsonUrl %>', this)">Скопировать JSON</button>
-              <button type="button" class="link-btn secondary" onclick="showQr('<%= jsonUrl %>', '<%= client.login %> · JSON')">QR</button>
+            <td class="link-col">
+              <div class="btn-row">
+                <button type="button" class="btn-main" onclick="copySubLink('<%= jsonUrl %>', this)">Скопировать JSON</button>
+                <button type="button" class="btn-qr" onclick="showQr('<%= jsonUrl %>', '<%= client.login %> · JSON')">QR</button>
+              </div>
             </td>
-            <td class="action-buttons">
-              <a class="link-btn" href="/open/<%= client.sub_slug %>" target="_blank">Открыть</a>
-              <a class="link-btn secondary" href="/clients/<%= client.id %>">Детали</a>
-              <form method="post" action="/clients/<%= client.id %>/toggle" class="inline-form">
-                <button type="submit" class="<%= client.enabled !== 0 ? 'danger' : 'secondary' %>"><%= client.enabled !== 0 ? 'Отключить' : 'Включить' %></button>
-              </form>
+            <td class="actions-col">
+              <div class="actions-stack">
+                <a class="btn-main" href="/open/<%= client.sub_slug %>" target="_blank">Открыть</a>
+                <button type="button" class="btn-secondary" onclick="openClientEditor(<%= client.id %>)">Редактор</button>
+                <form method="post" action="/clients/<%= client.id %>/toggle" class="inline-form">
+                  <button type="submit" class="<%= clientEnabled ? 'btn-danger' : 'btn-secondary' %>"><%= clientEnabled ? 'Отключить' : 'Включить' %></button>
+                </form>
+              </div>
             </td>
           </tr>
         <% }) %>
+        </tbody>
       </table>
     </div>
   </form>
 </div>
+
+<% clients.forEach(client => { 
+  const clientEnabled = client.enabled !== 0;
+%>
+  <div id="clientEditor-<%= client.id %>" class="modal hidden" onclick="closeClientEditor(event, <%= client.id %>)">
+    <div class="modal-card editor-modal" onclick="event.stopPropagation()">
+      <button type="button" class="modal-close" onclick="hideClientEditor(<%= client.id %>)">×</button>
+      <h2>Редактор клиента</h2>
+      <p class="muted"><code><%= client.uuid %></code></p>
+
+      <form method="post" action="/clients/<%= client.id %>/edit">
+        <input type="hidden" name="back" value="/clients" />
+        <div class="form-grid clean-form">
+          <div class="field half">
+            <label>Имя клиента</label>
+            <input name="display_name" value="<%= client.display_name %>" required />
+          </div>
+          <div class="field half">
+            <label>Логин / Email</label>
+            <input name="login" value="<%= client.login %>" required />
+          </div>
+          <div class="field half">
+            <label>Лимит IP</label>
+            <input name="limit_ip" type="number" min="1" value="<%= client.limit_ip || 1 %>" />
+          </div>
+          <div class="field half">
+            <label>Новый срок в днях</label>
+            <input name="duration_days" type="number" min="0" value="<%= client.duration_days || 0 %>" />
+            <small class="hint">0 = без срока. При сохранении срок считается заново от текущего момента.</small>
+          </div>
+          <div class="field half">
+            <label>Общий лимит трафика, ГБ</label>
+            <input name="traffic_gb" type="number" min="0" step="1" value="<%= client.traffic_gb || 0 %>" />
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="submit" class="btn-main">Сохранить</button>
+        </div>
+      </form>
+
+      <hr class="soft-sep" />
+
+      <form method="post" action="/clients/<%= client.id %>/extend" class="extend-form">
+        <input type="hidden" name="back" value="/clients" />
+        <label>Продлить срок</label>
+        <div class="btn-row stretch-row">
+          <input name="days" type="number" min="1" value="30" />
+          <button type="submit" class="btn-main">Продлить на дней</button>
+        </div>
+      </form>
+
+      <form method="post" action="/clients/<%= client.id %>/toggle" class="modal-actions">
+        <input type="hidden" name="back" value="/clients" />
+        <button type="submit" class="<%= clientEnabled ? 'btn-danger' : 'btn-secondary' %>"><%= clientEnabled ? 'Отключить клиента' : 'Включить клиента' %></button>
+      </form>
+    </div>
+  </div>
+<% }) %>
 
 <div id="qrModal" class="modal hidden" onclick="hideQr(event)">
   <div class="modal-card" onclick="event.stopPropagation()">
@@ -222,6 +298,9 @@ function showQr(text, title) {
 }
 function closeQr() { document.getElementById('qrModal').classList.add('hidden'); }
 function hideQr(e) { if (e.target.id === 'qrModal') closeQr(); }
+function openClientEditor(id) { document.getElementById('clientEditor-' + id).classList.remove('hidden'); }
+function hideClientEditor(id) { document.getElementById('clientEditor-' + id).classList.add('hidden'); }
+function closeClientEditor(e, id) { if (e.target.id === 'clientEditor-' + id) hideClientEditor(id); }
 document.addEventListener('DOMContentLoaded', () => {
   const selectAll = document.getElementById('selectAllNodes');
   if (selectAll) {
