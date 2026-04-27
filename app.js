@@ -1244,6 +1244,30 @@ app.post('/nodes/:id/check', requireAuth, async (req, res) => {
   res.redirect('/nodes?message=' + encodeURIComponent(msg));
 });
 
+
+app.post('/nodes/:id/toggle', requireAuth, (req, res) => {
+  try {
+    const nodeId = Number(req.params.id);
+    const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId);
+
+    if (!node) {
+      return res.redirect('/nodes?error=' + encodeURIComponent('Узел не найден'));
+    }
+
+    const nextEnabled = Number(node.enabled) === 1 ? 0 : 1;
+
+    db.prepare('UPDATE nodes SET enabled = ? WHERE id = ?').run(nextEnabled, nodeId);
+
+    const msg = nextEnabled
+      ? 'Узел включён и снова будет попадать в SUB/JSON'
+      : 'Узел отключён и не будет попадать в SUB/JSON';
+
+    res.redirect('/nodes?message=' + encodeURIComponent(msg));
+  } catch (err) {
+    res.redirect('/nodes?error=' + encodeURIComponent(String(err.message || err)));
+  }
+});
+
 app.get('/nodes/:id/edit', requireAuth, (req, res) => {
   const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(Number(req.params.id));
 
@@ -1886,6 +1910,15 @@ function getRemarkFromVlessLine(line) {
   return '';
 }
 
+
+function buildHappJsonConfigFromLine(client, line, subscriptionName, index = 0) {
+  const remark = getRemarkFromVlessLine(line) || `Server ${index + 1}`;
+  const config = buildHappJsonConfig(client, [line], remark);
+  config.remarks = remark;
+  config.name = remark;
+  return config;
+}
+
 function buildHappJsonConfig(client, lines, subscriptionName) {
   const proxyOutbounds = lines
     .filter(line => String(line).startsWith('vless://'))
@@ -2107,16 +2140,34 @@ app.get('/json/:slug', async (req, res) => {
 
   const lines = await buildSubscriptionLines(client, true);
   const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
-  const config = buildHappJsonConfig(client, lines, subscriptionName);
-
   const base64Title = Buffer.from(subscriptionName).toString('base64');
+
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(subscriptionName + '.json')}`);
   res.setHeader('Profile-Title', `base64:${base64Title}`);
   res.setHeader('Subscription-Title', `base64:${base64Title}`);
-  res.json(config);
-});
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
 
+  const vlessLines = lines.filter(line => String(line).startsWith('vless://'));
+
+  if (vlessLines.length > 1) {
+    return res.json(vlessLines.map((line, index) => buildHappJsonConfigFromLine(client, line, subscriptionName, index)));
+  }
+
+  if (vlessLines.length === 1) {
+    const remark = getRemarkFromVlessLine(vlessLines[0]) || subscriptionName;
+    return res.json(buildHappJsonConfigFromLine(client, vlessLines[0], subscriptionName, 0));
+  }
+
+  return res.json({
+    name: subscriptionName,
+    remarks: subscriptionName,
+    error: 'No active VLESS nodes in subscription',
+    subscriptions: []
+  });
+});
 
 app.get('/qr', async (req, res) => {
   try {
