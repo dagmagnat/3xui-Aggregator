@@ -3,7 +3,7 @@
   function flagIcon(code) {
     const cc = String(code || '').toLowerCase();
     if (!cc) return '';
-    return '<img class="flag-icon" src="https://flagcdn.com/w20/' + cc + '.png" alt="' + cc.toUpperCase() + '" loading="lazy">';
+    return '<img class="flag-icon" src="https://flagcdn.com/w20/' + cc + '.png" alt="" loading="lazy">';
   }
   function nodeName(node) {
     const suffix = (node.label_suffix || '').trim();
@@ -21,37 +21,51 @@
   <div class="card">
     <h2>Создать клиента</h2>
     <form method="post" action="/clients">
-      <label>Логин</label>
-      <input name="login" placeholder="<%= nextLogin || 'user001' %>" />
-      <small>Если оставить пустым, будет создан автоматически: <%= nextLogin || 'user001' %></small>
+      <div class="form-grid clean-form">
+        <div class="field">
+          <label>Логин</label>
+          <input name="login" placeholder="<%= nextLogin || 'user001' %>" />
+          <small class="hint">Если оставить пустым, будет создан автоматически: <%= nextLogin || 'user001' %>.</small>
+        </div>
 
-      <label>Срок в днях</label>
-      <input name="duration_days" type="number" min="0" value="30" />
-      <small>0 = без даты окончания. Если задан лимит трафика, reset передаётся в 3x-ui на этот срок.</small>
+        <div class="field half">
+          <label>Срок в днях</label>
+          <input name="duration_days" type="number" min="0" value="30" />
+          <small class="hint">0 = без даты окончания. Если задан лимит трафика, reset передаётся в 3x-ui на этот срок.</small>
+        </div>
 
-      <label>Общий лимит трафика, ГБ</label>
-      <input name="traffic_gb" type="number" min="0" step="1" value="0" />
-      <small>0 = без лимита. Этот лимит применяется ко всем узлам, если возле узла не указан отдельный лимит.</small>
+        <div class="field half">
+          <label>Общий лимит трафика, ГБ</label>
+          <input name="traffic_gb" type="number" min="0" step="1" value="0" />
+          <small class="hint">0 = без лимита. Применяется ко всем узлам, если возле узла не указан отдельный лимит.</small>
+        </div>
 
-      <label>Лимит IP</label>
-      <input name="limit_ip" type="number" min="1" value="1" required />
+        <div class="field half">
+          <label>Лимит IP</label>
+          <input name="limit_ip" type="number" min="1" value="1" required />
+        </div>
+      </div>
 
-      <div class="nodes-select-head">
-        <label>На каких узлах создать</label>
-        <label class="check-all"><input type="checkbox" onclick="toggleAllNodes(this)"> Выбрать все</label>
+      <div class="nodes-head">
+        <div>
+          <label>На каких узлах создать</label>
+          <small class="hint">Отдельный лимит ГБ возле узла имеет приоритет над общим лимитом.</small>
+        </div>
+        <label class="select-all-box">
+          <input type="checkbox" id="selectAllNodes" />
+          <span>Выбрать все</span>
+        </label>
       </div>
 
       <div class="checkbox-list node-list">
         <% nodes.forEach(node => { %>
-          <label class="checkbox-item node-quota-row">
+          <label class="node-item">
             <input class="node-check" type="checkbox" name="node_ids" value="<%= node.id %>" />
-            <span class="meta">
+            <span class="node-info">
               <strong><%- flagIcon(node.country_code) %> <%= nodeName(node) %></strong>
               <small>inbound <%= node.inbound_id %></small>
             </span>
-            <span class="node-quota-field">
-              <input name="node_traffic_gb_<%= node.id %>" type="number" min="0" step="1" placeholder="ГБ" />
-            </span>
+            <input class="node-gb-input" name="node_traffic_gb_<%= node.id %>" type="number" min="0" step="1" placeholder="ГБ" />
           </label>
         <% }) %>
       </div>
@@ -67,7 +81,7 @@
       <label>Основной узел-источник</label>
       <select name="node_id" required>
         <% nodes.forEach(node => { %>
-          <option value="<%= node.id %>"><%- flagIcon(node.country_code) %> <%= nodeName(node) %> (inbound <%= node.inbound_id %>)</option>
+          <option value="<%= node.id %>"><%= nodeName(node) %> (inbound <%= node.inbound_id %>)</option>
         <% }) %>
       </select>
       <button type="submit">Импортировать клиентов</button>
@@ -77,7 +91,7 @@
       <label>Узел-источник для обновления</label>
       <select name="node_id" required>
         <% nodes.forEach(node => { %>
-          <option value="<%= node.id %>"><%- flagIcon(node.country_code) %> <%= nodeName(node) %> (inbound <%= node.inbound_id %>)</option>
+          <option value="<%= node.id %>"><%= nodeName(node) %> (inbound <%= node.inbound_id %>)</option>
         <% }) %>
       </select>
       <button type="submit">Синхронизировать подписки</button>
@@ -132,7 +146,6 @@
           <th>Лимит</th>
           <th>Подписка</th>
           <th>JSON</th>
-          <th>QR</th>
           <th>Действия</th>
         </tr>
 
@@ -149,9 +162,14 @@
               <% if (client.traffic_gb && client.traffic_gb > 0) { %><%= client.traffic_gb %> ГБ<% } else { %>∞<% } %>
               / <% if (client.duration_days && client.duration_days > 0) { %><%= client.duration_days %> дн.<% } else { %>∞<% } %>
             </td>
-            <td><button type="button" class="link-btn" onclick="copySubLink('<%= subUrl %>', this)">Скопировать SUB</button></td>
-            <td><button type="button" class="link-btn" onclick="copySubLink('<%= jsonUrl %>', this)">Скопировать JSON</button></td>
-            <td><button type="button" class="link-btn secondary" onclick="showQr('<%= subUrl %>', '<%= client.login %>')">QR SUB</button></td>
+            <td class="btn-pair">
+              <button type="button" class="link-btn" onclick="copySubLink('<%= subUrl %>', this)">Скопировать SUB</button>
+              <button type="button" class="link-btn secondary" onclick="showQr('<%= subUrl %>', '<%= client.login %> · SUB')">QR</button>
+            </td>
+            <td class="btn-pair">
+              <button type="button" class="link-btn" onclick="copySubLink('<%= jsonUrl %>', this)">Скопировать JSON</button>
+              <button type="button" class="link-btn secondary" onclick="showQr('<%= jsonUrl %>', '<%= client.login %> · JSON')">QR</button>
+            </td>
             <td>
               <a class="link-btn" href="/open/<%= client.sub_slug %>" target="_blank">Открыть</a>
               <a class="link-btn secondary" href="/clients/<%= client.id %>">Детали</a>
@@ -190,12 +208,7 @@ function copySubLink(text, btn) {
     showToast('Ссылка скопирована');
   }).catch(() => showToast('Не удалось скопировать'));
 }
-function toggleAllClients(source) {
-  document.querySelectorAll('.client-check').forEach(cb => cb.checked = source.checked);
-}
-function toggleAllNodes(source) {
-  document.querySelectorAll('.node-check').forEach(cb => cb.checked = source.checked);
-}
+function toggleAllClients(source) { document.querySelectorAll('.client-check').forEach(cb => cb.checked = source.checked); }
 function showQr(text, title) {
   document.getElementById('qrTitle').textContent = title || 'QR';
   document.getElementById('qrText').textContent = text;
@@ -204,6 +217,14 @@ function showQr(text, title) {
 }
 function closeQr() { document.getElementById('qrModal').classList.add('hidden'); }
 function hideQr(e) { if (e.target.id === 'qrModal') closeQr(); }
+document.addEventListener('DOMContentLoaded', () => {
+  const selectAll = document.getElementById('selectAllNodes');
+  if (selectAll) {
+    selectAll.addEventListener('change', () => {
+      document.querySelectorAll('.node-check').forEach(cb => cb.checked = selectAll.checked);
+    });
+  }
+});
 </script>
 
 <%- include('partials_footer') %>

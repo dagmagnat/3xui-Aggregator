@@ -18,7 +18,7 @@
           <select name="country_code" required>
             <option value="">Выбери страну</option>
             <% countries.forEach(country => { %>
-              <option value="<%= country.code %>"><%= country.code %> <%= country.name_ru %></option>
+              <option value="<%= country.code %>"><%= country.name_ru %></option>
             <% }) %>
           </select>
         </div>

@@ -1050,7 +1050,7 @@ app.get('/nodes', requireAuth, (req, res) => {
 
   render(res, 'nodes', {
     nodes,
-    countries: COUNTRIES,
+    countries: [...COUNTRIES].sort((a, b) => a.name_ru.localeCompare(b.name_ru, 'ru')),
     message: req.query.message || '',
     error: req.query.error || ''
   });
@@ -1123,7 +1123,7 @@ app.get('/nodes/:id/edit', requireAuth, (req, res) => {
 
   render(res, 'node_edit', {
     node,
-    countries: COUNTRIES,
+    countries: [...COUNTRIES].sort((a, b) => a.name_ru.localeCompare(b.name_ru, 'ru')),
     message: req.query.message || '',
     error: req.query.error || ''
   });

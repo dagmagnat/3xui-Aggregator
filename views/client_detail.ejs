@@ -37,7 +37,8 @@
 
   <button type="button" class="link-btn" onclick="copySubLink('<%= baseUrl %>/sub/<%= client.sub_slug %>', this)">Скопировать SUB</button>
   <button type="button" class="link-btn" onclick="copySubLink('<%= baseUrl %>/json/<%= client.sub_slug %>', this)">Скопировать JSON</button>
-  <button type="button" class="link-btn secondary" onclick="showQr('<%= baseUrl %>/sub/<%= client.sub_slug %>', '<%= client.login %>')">QR SUB</button>
+  <button type="button" class="link-btn secondary" onclick="showQr('<%= baseUrl %>/sub/<%= client.sub_slug %>', '<%= client.login %> · SUB')">QR SUB</button>
+  <button type="button" class="link-btn secondary" onclick="showQr('<%= baseUrl %>/json/<%= client.sub_slug %>', '<%= client.login %> · JSON')">QR JSON</button>
   <a class="link-btn secondary" href="/open/<%= client.sub_slug %>" target="_blank">Страница подключения</a>
 </div>
 
