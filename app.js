@@ -1979,14 +1979,24 @@ app.get('/json/:slug', async (req, res) => {
 
   const lines = await buildSubscriptionLines(client, true);
   const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
-  const config = buildHappJsonConfig(client, lines, subscriptionName);
+
+  // Happ показывает отдельные серверы в подписке только если JSON отдаёт
+  // несколько отдельных конфигураций. Поэтому для JSON делаем массив: 
+  // 1 VLESS-ссылка = 1 JSON-конфиг с remarks региона.
+  const vlessLines = lines.filter(line => String(line).startsWith('vless://'));
+  const configs = vlessLines.length
+    ? vlessLines.map(line => {
+        const nodeRemark = getRemarkFromVlessLine(line) || subscriptionName;
+        return buildHappJsonConfig(client, [line], nodeRemark);
+      })
+    : [buildHappJsonConfig(client, lines, subscriptionName)];
 
   const base64Title = Buffer.from(subscriptionName).toString('base64');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(subscriptionName + '.json')}`);
   res.setHeader('Profile-Title', `base64:${base64Title}`);
   res.setHeader('Subscription-Title', `base64:${base64Title}`);
-  res.json(config);
+  res.json(configs);
 });
 
 
