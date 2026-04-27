@@ -79,6 +79,80 @@ validate_email() {
   fi
 }
 
+
+is_valid_domain() {
+  local domain
+  domain="$(trim "$1")"
+  printf '%s' "$domain" | grep -Eq '^[A-Za-z0-9.-]+$'
+}
+
+is_valid_email() {
+  local email
+  email="$(trim "$1")"
+  printf '%s' "$email" | grep -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+}
+
+ask_choice_loop() {
+  local prompt="$1"
+  local default="$2"
+  local allowed="$3"
+  local value
+  while true; do
+    value="$(ask "$prompt" "$default")"
+    value="$(trim "$value")"
+    case " $allowed " in
+      *" $value "*) echo "$value"; return 0 ;;
+    esac
+    err "Неверный выбор: $value"
+    warn "Допустимые варианты: $allowed"
+  done
+}
+
+ask_port_loop() {
+  local prompt="$1"
+  local default="$2"
+  local value
+  while true; do
+    value="$(ask "$prompt" "$default")"
+    value="$(trim "$value")"
+    if [[ "$value" =~ ^[0-9]+$ ]] && [ "$value" -ge 1 ] && [ "$value" -le 65535 ]; then
+      echo "$value"
+      return 0
+    fi
+    err "Порт должен быть числом от 1 до 65535."
+  done
+}
+
+ask_domain_loop() {
+  local prompt="$1"
+  local default="${2:-}"
+  local value
+  while true; do
+    value="$(ask "$prompt" "$default")"
+    value="$(trim "$value")"
+    if [ -n "$value" ] && is_valid_domain "$value"; then
+      echo "$value"
+      return 0
+    fi
+    err "Домен введён некорректно. Пример: example.com"
+  done
+}
+
+ask_email_loop() {
+  local prompt="$1"
+  local default="${2:-}"
+  local value
+  while true; do
+    value="$(ask "$prompt" "$default")"
+    value="$(trim "$value")"
+    if [ -n "$value" ] && is_valid_email "$value"; then
+      echo "$value"
+      return 0
+    fi
+    err "Email введён некорректно. Пример: admin@example.com"
+  done
+}
+
 port_in_use() {
   local port="$1"
   ss -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "(^|:)${port}$"
@@ -508,8 +582,7 @@ prompt_panel_mode() {
   say "2 - По домену"
   say "3 - Пропустить, оставить как есть"
   local choice
-  choice="$(ask 'Выбор для панели' '3')"
-  choice="$(trim "$choice")"
+  choice="$(ask_choice_loop 'Выбор для панели' '3' '1 2 3')"
 
   case "$choice" in
     1)
@@ -521,24 +594,14 @@ prompt_panel_mode() {
       ;;
     2)
       PANEL_MODE="domain"
-      PANEL_DOMAIN="$(ask 'Домен для панели' "${PANEL_DOMAIN:-}")"
-      PANEL_DOMAIN="$(trim "$PANEL_DOMAIN")"
-      validate_domain "$PANEL_DOMAIN"
-
-      PANEL_EMAIL="$(ask 'Email для SSL (LE / Caddy)' "${PANEL_EMAIL:-}")"
-      PANEL_EMAIL="$(trim "$PANEL_EMAIL")"
-      validate_email "$PANEL_EMAIL"
+      PANEL_DOMAIN="$(ask_domain_loop 'Домен для панели' "${PANEL_DOMAIN:-}")"
+      PANEL_EMAIL="$(ask_email_loop 'Email для SSL (LE / Caddy)' "${PANEL_EMAIL:-}")"
       ;;
     3)
       info "Настройки панели оставлены без изменений."
       ;;
-    *)
-      err "Неверный выбор."
-      exit 1
-      ;;
   esac
 }
-
 prompt_sub_mode() {
   SUB_MODE="$PANEL_MODE"
   SUB_DOMAIN="$PANEL_DOMAIN"
@@ -552,67 +615,43 @@ prompt_port_change() {
   say "1 - Изменить порт"
   say "2 - Оставить текущий"
   local choice
-  choice="$(ask 'Выбор по порту' '2')"
-  choice="$(trim "$choice")"
+  choice="$(ask_choice_loop 'Выбор по порту' '2' '1 2')"
 
   case "$choice" in
     1)
-      local new_port
-      new_port="$(ask 'Порт панели агрегатора' "${APP_PORT:-3000}")"
-      new_port="$(trim "$new_port")"
-      if ! [[ "$new_port" =~ ^[0-9]+$ ]]; then
-        err "Порт должен быть числом."
-        exit 1
-      fi
-      APP_PORT="$new_port"
+      APP_PORT="$(ask_port_loop 'Порт панели агрегатора' "${APP_PORT:-3000}")"
       ;;
     2)
       info "Порт оставлен без изменений."
       ;;
-    *)
-      err "Неверный выбор."
-      exit 1
-      ;;
   esac
 }
-
 prompt_admin_change() {
   echo
   say "Учетные данные панели:"
   say "1 - Изменить логин и/или пароль"
   say "2 - Оставить текущие"
   local choice
-  choice="$(ask 'Выбор по логину/паролю' '2')"
-  choice="$(trim "$choice")"
+  choice="$(ask_choice_loop 'Выбор по логину/паролю' '2' '1 2')"
 
   case "$choice" in
     1)
       ADMIN_USER="$(ask 'Логин администратора панели' "${ADMIN_USER:-admin}")"
       ADMIN_USER="$(trim "$ADMIN_USER")"
-
       local new_pass
       new_pass="$(ask_secret_optional 'Новый пароль администратора (оставь пустым, чтобы не менять)')"
       new_pass="$(trim "$new_pass")"
-
-      if [ -n "$new_pass" ]; then
-        ADMIN_PASS="$new_pass"
-      fi
-
+      if [ -n "$new_pass" ]; then ADMIN_PASS="$new_pass"; fi
       if [ -z "${ADMIN_PASS:-}" ]; then
         err "Пароль не должен быть пустым."
-        exit 1
+        return 1
       fi
       ;;
     2)
       info "Логин и пароль оставлены без изменений."
       ;;
-    *)
-      err "Неверный выбор."
-      exit 1
-      ;;
   esac
 }
-
 first_install_wizard() {
   local server_ip
   server_ip="$(get_public_server_ip)"
@@ -621,8 +660,7 @@ first_install_wizard() {
   say "1 - По IP"
   say "2 - По домену"
   local panel_choice
-  panel_choice="$(ask 'Режим панели' '1')"
-  panel_choice="$(trim "$panel_choice")"
+  panel_choice="$(ask_choice_loop 'Режим панели' '1' '1 2')"
 
   case "$panel_choice" in
     1)
@@ -632,17 +670,8 @@ first_install_wizard() {
       ;;
     2)
       PANEL_MODE="domain"
-      PANEL_DOMAIN="$(ask 'Домен для панели' '')"
-      PANEL_DOMAIN="$(trim "$PANEL_DOMAIN")"
-      validate_domain "$PANEL_DOMAIN"
-
-      PANEL_EMAIL="$(ask 'Email для SSL (LE / Caddy)' '')"
-      PANEL_EMAIL="$(trim "$PANEL_EMAIL")"
-      validate_email "$PANEL_EMAIL"
-      ;;
-    *)
-      err "Неизвестный режим панели."
-      exit 1
+      PANEL_DOMAIN="$(ask_domain_loop 'Домен для панели' '')"
+      PANEL_EMAIL="$(ask_email_loop 'Email для SSL (LE / Caddy)' '')"
       ;;
   esac
 
@@ -651,26 +680,20 @@ first_install_wizard() {
   SUB_IP="$PANEL_IP"
 
   echo
-  APP_PORT="$(ask 'Порт панели агрегатора' '3000')"
-  APP_PORT="$(trim "$APP_PORT")"
-  if ! [[ "$APP_PORT" =~ ^[0-9]+$ ]]; then
-    err "Порт должен быть числом."
-    exit 1
-  fi
+  APP_PORT="$(ask_port_loop 'Порт панели агрегатора' '3000')"
 
   ADMIN_USER="$(ask 'Логин администратора панели' 'admin')"
   ADMIN_USER="$(trim "$ADMIN_USER")"
 
-  ADMIN_PASS="$(ask_secret_optional 'Пароль администратора панели')"
-  ADMIN_PASS="$(trim "$ADMIN_PASS")"
-  if [ -z "$ADMIN_PASS" ]; then
+  while true; do
+    ADMIN_PASS="$(ask_secret_optional 'Пароль администратора панели')"
+    ADMIN_PASS="$(trim "$ADMIN_PASS")"
+    if [ -n "$ADMIN_PASS" ]; then break; fi
     err "Пароль не должен быть пустым."
-    exit 1
-  fi
+  done
 
   build_urls "$server_ip"
 }
-
 prepare_config_and_run() {
   local server_ip
   server_ip="$(get_public_server_ip)"

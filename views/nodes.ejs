@@ -55,7 +55,7 @@
         </div>
       </div>
 
-      <div class="actions">
+      <div class="actions node-actions">
         <button type="submit">Добавить узел</button>
       </div>
     </form>
@@ -120,7 +120,7 @@
                 <td><span class="badge <%= node.last_status || 'unknown' %>"><%= node.last_status || 'unknown' %></span></td>
                 <td style="max-width:280px; word-break:break-word;"><%= node.last_error || '-' %></td>
                 <td>
-                  <div class="actions">
+                  <div class="actions node-actions">
                     <form method="post" action="/nodes/<%= node.id %>/check" class="inline-form">
                       <button type="submit" class="secondary">Проверить</button>
                     </form>

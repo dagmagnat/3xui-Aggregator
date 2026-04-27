@@ -1734,6 +1734,9 @@ function parseVlessLineToOutbound(line, index = 0) {
     }
   };
 
+  const remark = getRemarkFromVlessLine(line);
+  if (remark) outbound.remarks = remark;
+
   if (security === 'reality') {
     outbound.streamSettings.realitySettings = {
       show: false,
@@ -1858,7 +1861,7 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
         statsOutboundUplink: true
       }
     },
-    remarks: getRemarkFromVlessLine(lines[0]) || client.display_name || client.login || subscriptionName,
+    remarks: subscriptionName || DEFAULT_SUBSCRIPTION_NAME,
     routing: {
       domainStrategy: 'IPIfNonMatch',
       rules: [
@@ -1972,8 +1975,11 @@ app.get('/json/:slug', async (req, res) => {
   const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
   const config = buildHappJsonConfig(client, lines, subscriptionName);
 
+  const base64Title = Buffer.from(subscriptionName).toString('base64');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(subscriptionName + '.json')}`);
+  res.setHeader('Profile-Title', `base64:${base64Title}`);
+  res.setHeader('Subscription-Title', `base64:${base64Title}`);
   res.json(config);
 });
 

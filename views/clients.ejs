@@ -191,9 +191,6 @@
               <div class="actions-stack">
                 <a class="btn-main" href="/open/<%= client.sub_slug %>" target="_blank">Открыть</a>
                 <button type="button" class="btn-secondary" onclick="openClientEditor(<%= client.id %>)">Редактор</button>
-                <form method="post" action="/clients/<%= client.id %>/toggle" class="inline-form">
-                  <button type="submit" class="<%= clientEnabled ? 'btn-danger' : 'btn-secondary' %>"><%= clientEnabled ? 'Отключить' : 'Включить' %></button>
-                </form>
               </div>
             </td>
           </tr>
