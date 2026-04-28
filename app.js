@@ -1830,12 +1830,45 @@ app.get('/sub/:slug', async (req, res) => {
 
   const lines = await buildSubscriptionLines(client, true);
   const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
+  const happRoutingLink = buildHappRoutingLink(subscriptionName);
 
   setSubscriptionNoCacheHeaders(res, subscriptionName, 'txt');
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
 
-  res.send(lines.join('\n'));
+  // HAPP accepts routing/app-management through headers and through body lines.
+  // Send both because QR/import flows on iOS may ignore one of the channels.
+  res.setHeader('routing', happRoutingLink);
+  res.setHeader('profile-title', subscriptionName);
+  res.setHeader('profile-update-interval', '1');
+  res.setHeader('subscription-auto-update-enable', '1');
+  res.setHeader('subscription-auto-update-open-enable', '1');
+  res.setHeader('subscription-ping-onopen-enabled', '1');
+  res.setHeader('ping-type', 'tcp');
+  res.setHeader('ping-result', 'icon');
+  res.setHeader('check-url-via-proxy', 'https://www.gstatic.com/generate_204');
+  res.setHeader('sniffing-enable', '1');
+  res.setHeader('subscriptions-collapse', '0');
+  res.setHeader('subscriptions-expand-now', '1');
+
+  const body = [
+    `#profile-title: ${subscriptionName}`,
+    '#profile-update-interval: 1',
+    '#subscription-auto-update-enable: 1',
+    '#subscription-auto-update-open-enable: 1',
+    '#subscription-ping-onopen-enabled: 1',
+    '#ping-type: tcp',
+    '#ping-result: icon',
+    '#check-url-via-proxy: https://www.gstatic.com/generate_204',
+    '#sniffing-enable: 1',
+    '#subscriptions-collapse: 0',
+    '#subscriptions-expand-now: 1',
+    happRoutingLink,
+    ...lines
+  ].join('\n');
+
+  res.send(body);
 });
+
 
 
 function parseVlessLineToOutbound(line, index = 0) {
@@ -1935,6 +1968,53 @@ function loadIplistDomains(serviceName) {
     console.warn('Unable to load ip-list domains:', error.message);
     return [];
   }
+}
+
+
+function buildHappRoutingProfile(subscriptionName) {
+  const now = Math.floor(Date.now() / 1000).toString();
+  return {
+    Name: `${subscriptionName || DEFAULT_SUBSCRIPTION_NAME} routing`,
+    GlobalProxy: 'false',
+    RouteOrder: 'block-proxy-direct',
+    UseChunkFiles: 'true',
+    RemoteDns: '1.1.1.1',
+    RemoteDNSType: 'DoU',
+    RemoteDNSDomain: 'https://cloudflare-dns.com/dns-query',
+    RemoteDNSIP: '1.1.1.1',
+    DomesticDNSType: 'DoU',
+    DomesticDNSDomain: 'https://dns.google/dns-query',
+    DomesticDNSIP: '8.8.8.8',
+    Geoipurl: 'https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat',
+    Geositeurl: 'https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat',
+    LastUpdated: now,
+    DnsHosts: {
+      'cloudflare-dns.com': '1.1.1.1',
+      'dns.google': '8.8.8.8'
+    },
+    DirectSites: [],
+    DirectIp: [
+      'geoip:private',
+      '10.0.0.0/8',
+      '172.16.0.0/12',
+      '192.168.0.0/16',
+      '169.254.0.0/16',
+      '224.0.0.0/4',
+      '255.255.255.255'
+    ],
+    ProxySites: ROUTING_PROXY_DOMAINS,
+    ProxyIp: ROUTING_PROXY_IPS,
+    BlockSites: ['geosite:category-ads-all'],
+    BlockIp: [],
+    DomainStrategy: 'IPIfNonMatch',
+    FakeDNS: 'false'
+  };
+}
+
+function buildHappRoutingLink(subscriptionName) {
+  const json = JSON.stringify(buildHappRoutingProfile(subscriptionName));
+  const encoded = Buffer.from(json, 'utf8').toString('base64');
+  return `happ://routing/onadd/${encoded}`;
 }
 
 const ROUTING_PROXY_DOMAINS = uniqueList([
@@ -2164,6 +2244,30 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
     }
   };
 }
+
+app.get('/happ-routing/:slug', async (req, res) => {
+  const client = db.prepare('SELECT * FROM clients WHERE sub_slug = ? AND enabled = 1').get(req.params.slug);
+
+  if (!client) {
+    return res.status(404).send('Subscription not found');
+  }
+
+  const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.send(buildHappRoutingLink(subscriptionName));
+});
+
+app.get('/happ-routing-json/:slug', async (req, res) => {
+  const client = db.prepare('SELECT * FROM clients WHERE sub_slug = ? AND enabled = 1').get(req.params.slug);
+
+  if (!client) {
+    return res.status(404).json({ error: 'Subscription not found' });
+  }
+
+  const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.json(buildHappRoutingProfile(subscriptionName));
+});
 
 app.get('/json/:slug', async (req, res) => {
   const client = db.prepare('SELECT * FROM clients WHERE sub_slug = ? AND enabled = 1').get(req.params.slug);
