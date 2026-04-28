@@ -36,6 +36,12 @@
           <small class="hint">Если оставить пустым, будет создан автоматически: <%= nextLogin || 'user001' %>.</small>
         </div>
 
+        <div class="field">
+          <label>Комментарий</label>
+          <input name="comment" placeholder="Например: имя клиента, телефон, заметка" />
+          <small class="hint">По этому полю тоже работает поиск. Передаётся в комментарий клиента 3x-ui.</small>
+        </div>
+
         <div class="field half">
           <label>Срок в днях</label>
           <input name="duration_days" type="number" min="0" value="30" />
@@ -126,7 +132,7 @@
   <h2>Все клиенты</h2>
 
   <form method="get" action="/clients" class="search-form">
-    <input name="q" value="<%= q || '' %>" placeholder="Поиск по имени, логину или UUID" />
+    <input name="q" value="<%= q || '' %>" placeholder="Поиск по имени, логину, UUID или комментарию" />
     <button type="submit" class="secondary">Найти</button>
     <% if (q) { %><a class="link-btn secondary" href="/clients">Сбросить</a><% } %>
   </form>
@@ -152,6 +158,7 @@
             <th>ID</th>
             <th>Имя</th>
             <th>Логин</th>
+            <th>Комментарий</th>
             <th>Лимит</th>
             <th>Статус</th>
             <th class="link-col">Подписка</th>
@@ -170,6 +177,7 @@
             <td><%= client.id %></td>
             <td><%= client.display_name %></td>
             <td><%= client.login %></td>
+            <td class="comment-cell"><%= client.comment || "-" %></td>
             <td>
               <% if (client.traffic_gb && client.traffic_gb > 0) { %><%= client.traffic_gb %> ГБ<% } else { %>∞<% } %>
               / <% if (client.duration_days && client.duration_days > 0) { %><%= client.duration_days %> дн.<% } else { %>∞<% } %>
@@ -220,6 +228,10 @@
           <div class="field half">
             <label>Логин / Email</label>
             <input name="login" value="<%= client.login %>" required />
+          </div>
+          <div class="field half">
+            <label>Комментарий</label>
+            <input name="comment" value="<%= client.comment || '' %>" placeholder="Заметка для поиска" />
           </div>
           <div class="field half">
             <label>Лимит IP</label>

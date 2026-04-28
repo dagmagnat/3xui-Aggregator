@@ -1,0 +1,79 @@
+<%- include('partials_header', { pageTitle: 'Маршрутизация', pageSubtitle: 'Параметры для JSON: какие сайты и IP отправлять через proxy, всё остальное напрямую', activePage: 'routing' }) %>
+
+<% if (message) { %><div class="alert ok"><%= message %></div><% } %>
+<% if (error) { %><div class="alert err"><%= error %></div><% } %>
+
+<div class="grid">
+  <section class="card span-6">
+    <h2>Параметры для JSON</h2>
+    <p class="muted">Эти настройки применяются к ссылкам <code>/json/:slug</code>. Старую ссылку клиенту пересылать не нужно: после сохранения клиент получит новые правила при обновлении JSON-профиля.</p>
+
+    <form method="post" action="/routing" class="routing-form">
+      <label class="switch-row">
+        <input type="checkbox" name="routing_enabled" value="1" <%= routingEnabled ? 'checked' : '' %> />
+        <span><strong>Использовать маршрутизацию</strong><small>Если выключить, JSON будет без proxy-правил и почти всё пойдёт напрямую.</small></span>
+      </label>
+
+      <h3>Готовые сервисы</h3>
+      <p class="hint">Выбери нужные сервисы. Система сама добавит правильные <code>geosite</code> и доступные <code>geoip</code>.</p>
+      <div class="preset-grid">
+        <% routingPresets.forEach(p => { %>
+          <label class="preset-card">
+            <input type="checkbox" name="presets" value="<%= p.key %>" <%= selectedPresets.includes(p.key) ? 'checked' : '' %> />
+            <span><strong><%= p.label %></strong><small><%= p.domains.concat(p.ips).join(', ') %></small></span>
+          </label>
+        <% }) %>
+      </div>
+
+      <div class="form-grid" style="margin-top:16px;">
+        <div class="field half">
+          <label>Дополнительные domain / geosite</label>
+          <textarea name="custom_domains" rows="10" placeholder="geosite:youtube&#10;domain:example.com&#10;regexp:.*\\.example\\.com$"><%= customDomainsText %></textarea>
+          <small class="hint">Можно писать через новую строку, запятую или точку с запятой. Поддерживается: <code>geosite:tag</code>, <code>domain:site.com</code>, <code>regexp:...</code>, <code>keyword:...</code>, <code>full:...</code>.</small>
+        </div>
+
+        <div class="field half">
+          <label>Дополнительные ip / geoip</label>
+          <textarea name="custom_ips" rows="10" placeholder="geoip:telegram&#10;1.2.3.0/24&#10;2001:db8::/32"><%= customIpsText %></textarea>
+          <small class="hint">Поддерживается: <code>geoip:tag</code>, IPv4, IPv4 CIDR, IPv6 и IPv6 CIDR. Например <code>geoip:facebook</code>.</small>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="submit">Сохранить и применить</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card span-6">
+    <h2>Текущий итог</h2>
+    <div class="kv-list">
+      <div class="kv-item">
+        <strong>JSON-ссылка</strong>
+        <div class="muted"><code><%= jsonUrlExample %></code></div>
+      </div>
+      <div class="kv-item">
+        <strong>Через proxy пойдут домены</strong>
+        <% if (proxyDomains.length) { %>
+          <pre class="routing-preview"><%= proxyDomains.join('\n') %></pre>
+        <% } else { %>
+          <div class="muted">Нет доменных правил.</div>
+        <% } %>
+      </div>
+      <div class="kv-item">
+        <strong>Через proxy пойдут IP</strong>
+        <% if (proxyIps.length) { %>
+          <pre class="routing-preview"><%= proxyIps.join('\n') %></pre>
+        <% } else { %>
+          <div class="muted">Нет IP-правил.</div>
+        <% } %>
+      </div>
+      <div class="kv-item">
+        <strong>Всё остальное</strong>
+        <div class="muted">Идёт напрямую через <code>direct</code>. Отдельное правило для <code>.ru</code> не создаётся, чтобы не добавлять лишнюю нагрузку.</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<%- include('partials_footer') %>

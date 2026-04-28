@@ -232,6 +232,7 @@ function initDb() {
       limit_ip INTEGER NOT NULL DEFAULT 1,
       expiry_time INTEGER NOT NULL DEFAULT 0,
       enabled INTEGER NOT NULL DEFAULT 1,
+      comment TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -258,6 +259,7 @@ function initDb() {
   try { db.prepare(`ALTER TABLE clients ADD COLUMN limit_ip INTEGER NOT NULL DEFAULT 1`).run(); } catch (_) {}
   try { db.prepare(`ALTER TABLE clients ADD COLUMN expiry_time INTEGER NOT NULL DEFAULT 0`).run(); } catch (_) {}
   try { db.prepare(`ALTER TABLE clients ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`).run(); } catch (_) {}
+  try { db.prepare(`ALTER TABLE clients ADD COLUMN comment TEXT NOT NULL DEFAULT ''`).run(); } catch (_) {}
   try { db.prepare(`ALTER TABLE client_nodes ADD COLUMN traffic_gb INTEGER NOT NULL DEFAULT 0`).run(); } catch (_) {}
 
   const existingAdmin = db.prepare('SELECT id FROM app_users WHERE username = ?').get(ADMIN_USERNAME);
@@ -360,6 +362,16 @@ function render(res, view, params = {}) {
 function getSetting(key, fallback = '') {
   const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key);
   return row?.value ?? fallback;
+}
+
+function setSetting(key, value) {
+  db.prepare(`
+    INSERT INTO app_settings (key, value, updated_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(key) DO UPDATE SET
+      value = excluded.value,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(key, String(value ?? ''));
 }
 
 function normalizeRootUrl(panelUrl, panelPath) {
@@ -758,6 +770,7 @@ async function importClientsFromNode(node) {
       subId,
       tgId: c.tgId || '',
       reset: c.reset || 0,
+      comment: String(c.comment || c.remark || c.description || "").trim(),
       totalGB: Number(c.totalGB || 0),
       originalSub: buildNativeSubUrl(node, subId),
       originalJson: buildNativeJsonUrl(node, subId)
@@ -846,9 +859,10 @@ async function syncClientsFromSourceNode(sourceNode) {
           traffic_gb,
           limit_ip,
           expiry_time,
-          enabled
+          enabled,
+          comment
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         login,
         displayName,
@@ -858,7 +872,8 @@ async function syncClientsFromSourceNode(sourceNode) {
         remoteTrafficGb,
         rc.limitIp || 1,
         rc.expiryTime || 0,
-        rc.enable !== false ? 1 : 0
+        rc.enable !== false ? 1 : 0,
+        rc.comment || ""
       );
 
       clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientInfo.lastInsertRowid);
@@ -879,7 +894,8 @@ async function syncClientsFromSourceNode(sourceNode) {
         Number(clientRow.limit_ip || 0) !== Number(rc.limitIp || 1) ||
         Number(clientRow.expiry_time || 0) !== Number(rc.expiryTime || 0) ||
         Number(clientRow.traffic_gb || 0) !== Number(remoteTrafficGb || 0) ||
-        Number(clientRow.enabled || 0) !== (rc.enable !== false ? 1 : 0);
+        Number(clientRow.enabled || 0) !== (rc.enable !== false ? 1 : 0) ||
+        String(clientRow.comment || "") !== String(rc.comment || "");
 
       if (changed) {
         db.prepare(`
@@ -892,7 +908,8 @@ async function syncClientsFromSourceNode(sourceNode) {
             traffic_gb = ?,
             limit_ip = ?,
             expiry_time = ?,
-            enabled = ?
+            enabled = ?,
+            comment = ?
           WHERE id = ?
         `).run(
           newLogin,
@@ -903,6 +920,7 @@ async function syncClientsFromSourceNode(sourceNode) {
           rc.limitIp || 1,
           rc.expiryTime || 0,
           rc.enable !== false ? 1 : 0,
+          rc.comment || "",
           clientRow.id
         );
 
@@ -1054,6 +1072,7 @@ async function updateClientOnNode(node, map, client, opts = {}) {
   const expiryTime = Math.max(0, Number(opts.expiry_time ?? client.expiry_time ?? current.expiryTime ?? 0));
   const email = String(opts.email || client.login || map.remote_email || current.email || '').trim();
   const subId = opts.subId || current.subId || client.sub_slug || randomUUID().replace(/-/g, '').slice(0, 16);
+  const comment = String(opts.comment ?? client.comment ?? current.comment ?? '').trim();
 
   const payload = {
     id: Number(node.inbound_id),
@@ -1068,7 +1087,8 @@ async function updateClientOnNode(node, map, client, opts = {}) {
         enable: opts.enabled !== undefined ? Boolean(opts.enabled) : (client.enabled !== 0 && current.enable !== false),
         tgId: current.tgId || '',
         subId,
-        reset: durationDays > 0 && trafficGb > 0 ? durationDays : 0
+        reset: durationDays > 0 && trafficGb > 0 ? durationDays : 0,
+        comment
       }]
     })
   };
@@ -1185,6 +1205,45 @@ app.get('/dashboard', requireAuth, (req, res) => {
     message: req.query.message || '',
     error: req.query.error || ''
   });
+});
+
+app.get('/routing', requireAuth, (req, res) => {
+  const cfg = getRoutingConfig();
+  render(res, 'routing', {
+    routingPresets: ROUTING_PRESETS,
+    selectedPresets: cfg.presets,
+    customDomainsText: (cfg.customDomains || []).join('\n'),
+    customIpsText: (cfg.customIps || []).join('\n'),
+    routingEnabled: cfg.enabled !== false,
+    proxyDomains: getRoutingProxyDomains(),
+    proxyIps: getRoutingProxyIps(),
+    jsonUrlExample: `${BASE_URL}/json/<slug>`,
+    message: req.query.message || '',
+    error: req.query.error || ''
+  });
+});
+
+app.post('/routing', requireAuth, (req, res) => {
+  try {
+    const presetsRaw = req.body.presets;
+    const selectedPresets = Array.isArray(presetsRaw) ? presetsRaw : (presetsRaw ? [presetsRaw] : []);
+    const allowedPresetKeys = new Set(ROUTING_PRESETS.map(p => p.key));
+    const presets = uniqueList(selectedPresets.map(v => String(v || '').trim()).filter(v => allowedPresetKeys.has(v)));
+    const parsedDomains = parseRoutingLines(req.body.custom_domains || '', 'domain');
+    const parsedIps = parseRoutingLines(req.body.custom_ips || '', 'ip');
+    const errors = [...parsedDomains.errors, ...parsedIps.errors];
+    if (errors.length) throw new Error(errors.join(' | '));
+    const cfg = {
+      enabled: req.body.routing_enabled === '1',
+      presets,
+      customDomains: parsedDomains.values,
+      customIps: parsedIps.values
+    };
+    setSetting('routing_config', JSON.stringify(cfg));
+    res.redirect('/routing?message=' + encodeURIComponent('Маршрутизация сохранена. Старые JSON-ссылки применят новые правила при следующем обновлении клиента.'));
+  } catch (err) {
+    res.redirect('/routing?error=' + encodeURIComponent(String(err.message || err)));
+  }
 });
 
 app.get('/settings', requireAuth, (req, res) => {
@@ -1501,9 +1560,9 @@ app.get('/clients', requireAuth, (req, res) => {
             LIMIT 1
           ) AS source_sub_url
         FROM clients c
-        WHERE c.login LIKE ? OR c.display_name LIKE ? OR c.uuid LIKE ?
+        WHERE c.login LIKE ? OR c.display_name LIKE ? OR c.uuid LIKE ? OR IFNULL(c.comment, '') LIKE ?
         ORDER BY c.id DESC
-      `).all(like, like, like)
+      `).all(like, like, like, like)
     : db.prepare(`
         SELECT c.*,
           (
@@ -1533,7 +1592,7 @@ app.get('/clients', requireAuth, (req, res) => {
 
 app.post('/clients', requireAuth, async (req, res) => {
   try {
-    const { login, limit_ip, duration_days, traffic_gb } = req.body;
+    const { login, limit_ip, duration_days, traffic_gb, comment } = req.body;
     let nodeIds = req.body.node_ids || [];
 
     if (!Array.isArray(nodeIds)) nodeIds = [nodeIds];
@@ -1541,6 +1600,7 @@ app.post('/clients', requireAuth, async (req, res) => {
 
     const cleanLogin = String(login || '').trim() || getNextAutoLogin();
     const cleanDisplayName = cleanLogin;
+    const cleanComment = String(comment || "").trim();
     const cleanLimitIp = Math.max(1, Number(limit_ip || 1));
     const cleanDurationDays = Math.max(0, Number(duration_days || 0));
     const cleanTrafficGb = Math.max(0, Number(traffic_gb || 0));
@@ -1555,9 +1615,9 @@ app.post('/clients', requireAuth, async (req, res) => {
     const subSlug = sharedSubId;
 
     const clientInfo = db.prepare(`
-      INSERT INTO clients (login, display_name, uuid, sub_slug, duration_days, traffic_gb, limit_ip, expiry_time)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(cleanLogin, cleanDisplayName, uuid, subSlug, cleanDurationDays, cleanTrafficGb, cleanLimitIp, expiryTime);
+      INSERT INTO clients (login, display_name, uuid, sub_slug, duration_days, traffic_gb, limit_ip, expiry_time, comment)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(cleanLogin, cleanDisplayName, uuid, subSlug, cleanDurationDays, cleanTrafficGb, cleanLimitIp, expiryTime, cleanComment);
 
     const clientId = clientInfo.lastInsertRowid;
 
@@ -1587,7 +1647,8 @@ app.post('/clients', requireAuth, async (req, res) => {
             enable: true,
             tgId: '',
             subId: sharedSubId,
-            reset: cleanDurationDays > 0 && nodeTrafficGb > 0 ? cleanDurationDays : 0
+            reset: cleanDurationDays > 0 && nodeTrafficGb > 0 ? cleanDurationDays : 0,
+            comment: cleanComment
           }]
         })
       };
@@ -1832,6 +1893,7 @@ app.post('/clients/:id/edit', requireAuth, async (req, res) => {
     const limitIp = Math.max(1, Number(req.body.limit_ip || client.limit_ip || 1));
     const durationDays = Math.max(0, Number(req.body.duration_days || 0));
     const trafficGb = Math.max(0, Number(req.body.traffic_gb || 0));
+    const comment = String(req.body.comment || "").trim();
     const expiryTime = durationDays > 0 ? Date.now() + durationDays * 24 * 60 * 60 * 1000 : 0;
 
     const loginOwner = db.prepare('SELECT id FROM clients WHERE login = ? AND id != ?').get(login, clientId);
@@ -1839,9 +1901,9 @@ app.post('/clients/:id/edit', requireAuth, async (req, res) => {
 
     db.prepare(`
       UPDATE clients
-      SET login = ?, display_name = ?, limit_ip = ?, duration_days = ?, traffic_gb = ?, expiry_time = ?
+      SET login = ?, display_name = ?, limit_ip = ?, duration_days = ?, traffic_gb = ?, expiry_time = ?, comment = ?
       WHERE id = ?
-    `).run(login, displayName, limitIp, durationDays, trafficGb, expiryTime, clientId);
+    `).run(login, displayName, limitIp, durationDays, trafficGb, expiryTime, comment, clientId);
 
     const updatedClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
     const mappings = db.prepare('SELECT * FROM client_nodes WHERE client_id = ?').all(clientId);
@@ -1857,7 +1919,8 @@ app.post('/clients/:id/edit', requireAuth, async (req, res) => {
           limit_ip: limitIp,
           duration_days: durationDays,
           traffic_gb: nodeTrafficGb,
-          expiry_time: expiryTime
+          expiry_time: expiryTime,
+          comment
         });
       } catch (err) {
         console.error('Update client node failed:', err.message);
@@ -2125,8 +2188,8 @@ function buildHappRoutingProfile(subscriptionName) {
     },
     DirectSites: [],
     DirectIp: [],
-    ProxySites: ROUTING_PROXY_DOMAINS,
-    ProxyIp: ROUTING_PROXY_IPS,
+    ProxySites: getRoutingProxyDomains(),
+    ProxyIp: getRoutingProxyIps(),
     BlockSites: [],
     BlockIp: [],
     DomainStrategy: 'IPIfNonMatch',
@@ -2166,6 +2229,100 @@ const ROUTING_PROXY_IPS = uniqueList([
   'geoip:telegram',
   'geoip:facebook'
 ]);
+
+const ROUTING_PRESETS = [
+  { key: 'youtube', label: 'YouTube', domains: ['geosite:youtube'], ips: [] },
+  { key: 'meta', label: 'Meta', domains: ['geosite:meta'], ips: [] },
+  { key: 'facebook', label: 'Facebook', domains: ['geosite:facebook'], ips: ['geoip:facebook'] },
+  { key: 'instagram', label: 'Instagram', domains: ['geosite:instagram'], ips: [] },
+  { key: 'whatsapp', label: 'WhatsApp', domains: ['geosite:whatsapp'], ips: [] },
+  { key: 'openai', label: 'OpenAI / ChatGPT', domains: ['geosite:openai'], ips: [] },
+  { key: 'telegram', label: 'Telegram', domains: ['geosite:telegram'], ips: ['geoip:telegram'] }
+];
+
+const ROUTING_DEFAULT_CUSTOM_DOMAINS = [
+  'domain:fbcdn.net',
+  'domain:fbsbx.com',
+  'domain:messenger.com',
+  'domain:m.me',
+  'domain:instagram.com',
+  'domain:cdninstagram.com',
+  'domain:whatsapp.com',
+  'domain:whatsapp.net',
+  'domain:wa.me'
+];
+
+function getDefaultRoutingConfig() {
+  return {
+    presets: ROUTING_PRESETS.map(p => p.key),
+    customDomains: ROUTING_DEFAULT_CUSTOM_DOMAINS,
+    customIps: [],
+    enabled: true
+  };
+}
+
+function getRoutingConfig() {
+  const raw = getSetting('routing_config', '');
+  if (!raw) return getDefaultRoutingConfig();
+  try {
+    const parsed = JSON.parse(raw);
+    const fallback = getDefaultRoutingConfig();
+    return {
+      enabled: parsed.enabled !== false,
+      presets: Array.isArray(parsed.presets) ? parsed.presets : fallback.presets,
+      customDomains: Array.isArray(parsed.customDomains) ? parsed.customDomains : fallback.customDomains,
+      customIps: Array.isArray(parsed.customIps) ? parsed.customIps : fallback.customIps
+    };
+  } catch (_) {
+    return getDefaultRoutingConfig();
+  }
+}
+
+function normalizeRoutingLine(value, kind) {
+  let line = String(value || '').trim().toLowerCase();
+  if (!line) return '';
+  line = line.replace(/\s+/g, '');
+  if (kind === 'domain') {
+    if (/^(geosite|domain|regexp|keyword|full):.+/.test(line)) return line;
+    if (/^[a-z0-9*_.-]+\.[a-z0-9_.-]+$/.test(line)) return `domain:${line.replace(/^\*\./, '')}`;
+    return null;
+  }
+  if (kind === 'ip') {
+    if (/^geoip:[a-z0-9_-]+$/.test(line)) return line;
+    if (/^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/.test(line)) return line;
+    if (/^[0-9a-f:]+(\/\d{1,3})?$/i.test(line) && line.includes(':')) return line;
+    return null;
+  }
+  return null;
+}
+
+function parseRoutingLines(text, kind) {
+  const errors = [];
+  const values = [];
+  String(text || '').split(/[\n,;]+/).map(v => v.trim()).filter(Boolean).forEach((raw, index) => {
+    const normalized = normalizeRoutingLine(raw, kind);
+    if (!normalized) {
+      errors.push(`Строка ${index + 1}: "${raw}" не подходит для ${kind === 'domain' ? 'domain/geosite' : 'ip/geoip'}. Используй geosite:tag, domain:example.com, regexp:..., geoip:tag или CIDR.`);
+    } else {
+      values.push(normalized);
+    }
+  });
+  return { values: uniqueList(values), errors };
+}
+
+function getRoutingProxyDomains() {
+  const cfg = getRoutingConfig();
+  if (cfg.enabled === false) return [];
+  const presetDomains = ROUTING_PRESETS.filter(p => cfg.presets.includes(p.key)).flatMap(p => p.domains);
+  return uniqueList([...presetDomains, ...cfg.customDomains]);
+}
+
+function getRoutingProxyIps() {
+  const cfg = getRoutingConfig();
+  if (cfg.enabled === false) return [];
+  const presetIps = ROUTING_PRESETS.filter(p => cfg.presets.includes(p.key)).flatMap(p => p.ips);
+  return uniqueList([...presetIps, ...cfg.customIps]);
+}
 
 const ROUTING_DIRECT_DOMAINS = uniqueList([
   'geosite:private',
@@ -2294,12 +2451,12 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
       rules: [
         {
           type: 'field',
-          domain: ROUTING_PROXY_DOMAINS,
+          domain: getRoutingProxyDomains(),
           outboundTag: 'proxy'
         },
         {
           type: 'field',
-          ip: ROUTING_PROXY_IPS,
+          ip: getRoutingProxyIps(),
           outboundTag: 'proxy'
         },
         {

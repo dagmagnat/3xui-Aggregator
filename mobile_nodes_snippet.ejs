@@ -1,0 +1,49 @@
+      <div class="mobile-node-list">
+        <% nodes.forEach(node => {
+          const suffix = (node.label_suffix || '').trim();
+          const baseName = node.country_name_ru || node.name;
+          const displayName = suffix
+            ? (/^\d+$/.test(suffix) ? `${baseName}-${suffix}` : `${baseName} ${suffix}`)
+            : baseName;
+          const isEnabled = Number(node.enabled) === 1;
+        %>
+          <div class="mobile-node-card <%= isEnabled ? '' : 'muted-row' %>">
+            <div class="mobile-node-main">
+              <span class="mobile-node-id">#<%= node.id %></span>
+              <div>
+                <strong><%= displayName %></strong>
+                <small>Inbound <%= node.inbound_id %> · <%= isEnabled ? 'Включён' : 'Отключён' %></small>
+              </div>
+            </div>
+            <button type="button" class="btn-secondary" onclick="openNodeDetails(<%= node.id %>)">Детали</button>
+          </div>
+
+          <div id="nodeDetails-<%= node.id %>" class="modal hidden" onclick="closeNodeDetails(event, <%= node.id %>)">
+            <div class="modal-card editor-modal" onclick="event.stopPropagation()">
+              <button type="button" class="modal-close" onclick="hideNodeDetails(<%= node.id %>)">×</button>
+              <h2><%= displayName %></h2>
+              <div class="mobile-detail-list">
+                <div><span>ID</span><strong><%= node.id %></strong></div>
+                <div><span>Panel URL</span><code><%= node.panel_url %></code></div>
+                <div><span>Path</span><code><%= node.panel_path || '-' %></code></div>
+                <div><span>Inbound</span><strong><%= node.inbound_id %></strong></div>
+                <div><span>Статус</span><strong><%= node.last_status || 'unknown' %></strong></div>
+                <% if (node.last_error) { %><div><span>Ошибка</span><code><%= node.last_error %></code></div><% } %>
+              </div>
+              <div class="mobile-node-actions">
+                <form method="post" action="/nodes/<%= node.id %>/check"><button type="submit" class="secondary">Проверить</button></form>
+                <form method="post" action="/nodes/<%= node.id %>/toggle" onsubmit="return confirm('<%= isEnabled ? 'Отключить узел из подписок?' : 'Включить узел обратно в подписки?' %>')">
+                  <% if (isEnabled) { %><button type="submit" class="danger">Отключить</button><% } else { %><button type="submit" class="secondary">Включить</button><% } %>
+                </form>
+                <a href="/nodes/<%= node.id %>/edit" class="link-btn secondary">Изменить</a>
+                <form method="post" action="/nodes/<%= node.id %>/delete" onsubmit="return confirm('Удалить узел?')"><button type="submit" class="danger">Удалить</button></form>
+              </div>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+      <script>
+        function openNodeDetails(id) { document.getElementById('nodeDetails-' + id).classList.remove('hidden'); }
+        function hideNodeDetails(id) { document.getElementById('nodeDetails-' + id).classList.add('hidden'); }
+        function closeNodeDetails(e, id) { if (e.target.id === 'nodeDetails-' + id) hideNodeDetails(id); }
+      </script>
