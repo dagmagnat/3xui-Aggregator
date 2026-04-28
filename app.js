@@ -2164,6 +2164,10 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
         {
           type: 'field',
           domain: ROUTING_PROXY_DOMAINS,
+          outboundTag: 'proxy'
+        },
+        {
+          type: 'field',
           ip: ROUTING_PROXY_IPS,
           outboundTag: 'proxy'
         },
