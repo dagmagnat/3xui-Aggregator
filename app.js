@@ -132,6 +132,12 @@ const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 const DEFAULT_SUBSCRIPTION_NAME = process.env.SUBSCRIPTION_NAME || 'VPN';
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
+const TRUST_PROXY = String(process.env.TRUST_PROXY || '').toLowerCase() === '1' || String(process.env.TRUST_PROXY || '').toLowerCase() === 'true';
+const SESSION_SECURE = String(process.env.SESSION_SECURE || '').toLowerCase() === '1' || String(process.env.SESSION_SECURE || '').toLowerCase() === 'true';
+const LOGIN_MAX_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS || 5);
+const LOGIN_LOCK_MINUTES = Number(process.env.LOGIN_LOCK_MINUTES || 15);
+
+if (TRUST_PROXY) app.set('trust proxy', 1);
 
 const FETCH_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS || 12000);
 
@@ -177,7 +183,7 @@ app.use(session({
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: false
+    secure: SESSION_SECURE
   }
 }));
 
@@ -264,19 +270,68 @@ function initDb() {
   if (!existingSubName) {
     db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?)').run('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
   }
+
+  const existingAllowedIps = db.prepare('SELECT value FROM app_settings WHERE key = ?').get('admin_allowed_ips');
+  if (!existingAllowedIps) {
+    db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?)').run('admin_allowed_ips', '');
+  }
 }
 
 initDb();
 
 function getClientIp(req) {
-  return String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')
+  const raw = TRUST_PROXY
+    ? String(req.headers['x-forwarded-for'] || req.ip || req.socket.remoteAddress || '')
+    : String(req.socket.remoteAddress || req.ip || '');
+
+  return raw
     .split(',')[0]
-    .trim();
+    .trim()
+    .replace(/^::ffff:/, '');
+}
+
+function parseAllowedIps() {
+  const raw = getSetting('admin_allowed_ips', '');
+  return String(raw || '')
+    .split(/[\s,;]+/)
+    .map(v => v.trim())
+    .filter(Boolean);
+}
+
+function isAdminIpAllowed(req) {
+  const allowed = parseAllowedIps();
+  if (!allowed.length) return true;
+  return allowed.includes(getClientIp(req));
+}
+
+function requireAllowedAdminIp(req, res, next) {
+  if (isAdminIpAllowed(req)) return next();
+  return res.status(403).send('Access denied: this IP is not allowed for admin panel.');
+}
+
+const loginFailures = new Map();
+
+function loginFailureKey(req, username) {
+  return `${getClientIp(req)}:${String(username || '').toLowerCase()}`;
+}
+
+function getLoginFailure(req, username) {
+  const key = loginFailureKey(req, username);
+  const item = loginFailures.get(key);
+  if (!item) return { key, count: 0, lockedUntil: 0 };
+  if (item.lockedUntil && Date.now() > item.lockedUntil) {
+    loginFailures.delete(key);
+    return { key, count: 0, lockedUntil: 0 };
+  }
+  return { key, ...item };
 }
 
 function requireAuth(req, res, next) {
-  if (!req.session.userId) return res.redirect('/login');
+  if (!isAdminIpAllowed(req)) {
+    return req.session.destroy(() => res.status(403).send('Access denied: this IP is not allowed for admin panel.'));
+  }
 
+  if (!req.session.userId) return res.redirect('/login');
   const now = Date.now();
   const currentIp = getClientIp(req);
   const lastActivity = Number(req.session.lastActivity || 0);
@@ -1070,21 +1125,35 @@ async function deleteClientEverywhere(client, deleteMode) {
 
 app.get('/', requireAuth, (req, res) => res.redirect('/dashboard'));
 
-app.get('/login', (req, res) => render(res, 'login', { error: null }));
+app.get('/login', requireAllowedAdminIp, (req, res) => render(res, 'login', { error: req.query.message || null }));
 
-app.post('/login', (req, res) => {
-  const user = db.prepare('SELECT * FROM app_users WHERE username = ?').get(req.body.username || '');
+app.post('/login', requireAllowedAdminIp, (req, res) => {
+  const username = String(req.body.username || '');
+  const failure = getLoginFailure(req, username);
+
+  if (failure.lockedUntil && Date.now() < failure.lockedUntil) {
+    const minutes = Math.ceil((failure.lockedUntil - Date.now()) / 60000);
+    return render(res, 'login', { error: `Слишком много попыток входа. Повтори через ${minutes} мин.` });
+  }
+
+  const user = db.prepare('SELECT * FROM app_users WHERE username = ?').get(username);
 
   if (!user || !bcrypt.compareSync(req.body.password || '', user.password_hash)) {
+    const count = Number(failure.count || 0) + 1;
+    const lockedUntil = count >= LOGIN_MAX_ATTEMPTS ? Date.now() + LOGIN_LOCK_MINUTES * 60 * 1000 : 0;
+    loginFailures.set(failure.key, { count, lockedUntil });
     return render(res, 'login', { error: 'Неверный логин или пароль' });
   }
 
-  req.session.userId = user.id;
-  req.session.loginIp = getClientIp(req);
-  req.session.lastActivity = Date.now();
-  res.redirect('/dashboard');
+  loginFailures.delete(failure.key);
+  req.session.regenerate((err) => {
+    if (err) return render(res, 'login', { error: 'Не удалось создать сессию' });
+    req.session.userId = user.id;
+    req.session.loginIp = getClientIp(req);
+    req.session.lastActivity = Date.now();
+    res.redirect('/dashboard');
+  });
 });
-
 app.post('/logout', requireAuth, (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
 });
@@ -1125,6 +1194,8 @@ app.get('/settings', requireAuth, (req, res) => {
   render(res, 'settings', {
     subscriptionName,
     adminUsername: currentUser?.username || '',
+    adminAllowedIps: getSetting('admin_allowed_ips', ''),
+    currentIp: getClientIp(req),
     message: req.query.message || '',
     error: req.query.error || ''
   });
@@ -1142,6 +1213,20 @@ app.post('/settings', requireAuth, (req, res) => {
         value = excluded.value,
         updated_at = CURRENT_TIMESTAMP
     `).run('subscription_name', subscriptionName);
+
+    const adminAllowedIps = String(req.body.admin_allowed_ips || '')
+      .split(/[\s,;]+/)
+      .map(v => v.trim())
+      .filter(Boolean)
+      .join('\n');
+
+    db.prepare(`
+      INSERT INTO app_settings (key, value, updated_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = CURRENT_TIMESTAMP
+    `).run('admin_allowed_ips', adminAllowedIps);
 
     const currentPassword = String(req.body.current_password || '');
     const newUsername = String(req.body.admin_username || '').trim();
@@ -1164,7 +1249,7 @@ app.post('/settings', requireAuth, (req, res) => {
       if (newPassword) {
         if (newPassword.length < 8) throw new Error('Новый пароль должен быть минимум 8 символов');
         if (newPassword !== newPassword2) throw new Error('Новый пароль и повтор не совпадают');
-        finalHash = bcrypt.hashSync(newPassword, 10);
+        finalHash = bcrypt.hashSync(newPassword, 12);
       }
 
       db.prepare('UPDATE app_users SET username = ?, password_hash = ? WHERE id = ?')
@@ -1174,6 +1259,52 @@ app.post('/settings', requireAuth, (req, res) => {
     res.redirect('/settings?message=' + encodeURIComponent('Настройки сохранены'));
   } catch (err) {
     res.redirect('/settings?error=' + encodeURIComponent(String(err.message || err)));
+  }
+});
+
+function exportBackupPayload() {
+  const tables = ['app_users', 'app_settings', 'nodes', 'clients', 'client_nodes'];
+  const data = {};
+  for (const table of tables) data[table] = db.prepare(`SELECT * FROM ${table}`).all();
+  return { app: '3xui-aggregator', version: 1, created_at: new Date().toISOString(), data };
+}
+
+function restoreBackupPayload(payload) {
+  if (!payload || payload.app !== '3xui-aggregator' || !payload.data) throw new Error('Неверный файл резервной копии');
+  const deleteTables = ['client_nodes', 'clients', 'nodes', 'app_settings', 'app_users'];
+  const restoreTables = ['app_users', 'app_settings', 'nodes', 'clients', 'client_nodes'];
+  const tx = db.transaction(() => {
+    for (const table of deleteTables) db.prepare(`DELETE FROM ${table}`).run();
+    for (const table of restoreTables) {
+      const rows = Array.isArray(payload.data[table]) ? payload.data[table] : [];
+      for (const row of rows) {
+        const keys = Object.keys(row);
+        if (!keys.length) continue;
+        const cols = keys.map(k => `"${k}"`).join(', ');
+        const placeholders = keys.map(k => `@${k}`).join(', ');
+        db.prepare(`INSERT INTO ${table} (${cols}) VALUES (${placeholders})`).run(row);
+      }
+    }
+  });
+  tx();
+}
+
+app.get('/backup/download', requireAuth, (req, res) => {
+  const payload = exportBackupPayload();
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="3xui-aggregator-backup-${stamp}.json"`);
+  res.send(JSON.stringify(payload, null, 2));
+});
+
+app.post('/backup/restore', requireAuth, bodyParser.text({ type: '*/*', limit: '50mb' }), (req, res) => {
+  try {
+    const text = String(req.body || '').trim();
+    if (!text) throw new Error('Файл резервной копии пустой');
+    restoreBackupPayload(JSON.parse(text));
+    req.session.destroy(() => res.redirect('/login?message=' + encodeURIComponent('Резервная копия восстановлена. Войди заново.')));
+  } catch (err) {
+    res.status(400).send(String(err.message || err));
   }
 });
 

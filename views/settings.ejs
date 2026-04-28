@@ -1,4 +1,4 @@
-<%- include('partials_header', { pageTitle: 'Настройки', pageSubtitle: 'Параметры подписки, админки и безопасности', activePage: 'settings' }) %>
+<%- include('partials_header', { pageTitle: 'Настройки', pageSubtitle: 'Параметры подписки, админки, безопасности и резервных копий', activePage: 'settings' }) %>
 
 <% if (message) { %><div class="alert ok"><%= message %></div><% } %>
 <% if (error) { %><div class="alert err"><%= error %></div><% } %>
@@ -37,6 +37,12 @@
           <label>Повтор нового пароля</label>
           <input name="new_password_confirm" type="password" autocomplete="new-password" />
         </div>
+
+        <div class="field">
+          <label>Разрешённые IP для входа в админку</label>
+          <textarea name="admin_allowed_ips" rows="4" placeholder="Оставь пустым, чтобы разрешить вход с любого IP"><%= adminAllowedIps || '' %></textarea>
+          <small class="hint">Твой текущий IP: <strong><%= currentIp || 'не определён' %></strong>. Можно указать несколько IP через пробел, запятую или с новой строки. Будь осторожен: если указать неправильный IP, вход будет закрыт.</small>
+        </div>
       </div>
 
       <div class="actions">
@@ -46,26 +52,63 @@
   </section>
 
   <section class="card span-6">
-    <h2>Безопасность</h2>
+    <h2>Резервная копия</h2>
     <div class="kv-list">
       <div class="kv-item">
-        <strong>Сессия до закрытия браузера</strong>
-        <div class="muted">Cookie сессии больше не хранится 7 дней. После закрытия браузера вход потребуется снова.</div>
+        <strong>Скачать резервную копию</strong>
+        <div class="muted">Сохраняет пользователей панели, настройки, узлы, клиентов и связи клиентов с узлами.</div>
+        <div class="actions" style="margin-top:12px;">
+          <a class="button" href="/backup/download">Создать и скачать</a>
+        </div>
       </div>
       <div class="kv-item">
-        <strong>Автовыход через 30 минут</strong>
-        <div class="muted">Если панель не используется 30 минут, сессия сбрасывается.</div>
-      </div>
-      <div class="kv-item">
-        <strong>Привязка к IP</strong>
-        <div class="muted">Если IP изменился, панель автоматически попросит войти заново.</div>
-      </div>
-      <div class="kv-item">
-        <strong>JSON-подписка</strong>
-        <div class="muted">/json/SLUG отдаёт Happ/Xray JSON с маршрутизацией: YouTube, Meta, WhatsApp, Telegram, GitHub и OpenAI через Proxy, остальное Direct.</div>
+        <strong>Восстановить из резервной копии</strong>
+        <div class="muted">После восстановления текущая база будет заменена, а сессия сброшена.</div>
+        <input id="backup-file" type="file" accept="application/json,.json" style="margin-top:12px;" />
+        <div class="actions" style="margin-top:12px;">
+          <button type="button" onclick="restoreBackup()">Загрузить резервную копию</button>
+        </div>
       </div>
     </div>
   </section>
+
+  <section class="card span-6">
+    <h2>Безопасность</h2>
+    <div class="kv-list">
+      <div class="kv-item"><strong>Защита от перебора</strong><div class="muted">После 5 неверных попыток вход блокируется на 15 минут для пары IP + логин.</div></div>
+      <div class="kv-item"><strong>Автовыход через 30 минут</strong><div class="muted">Если панель не используется 30 минут, сессия сбрасывается.</div></div>
+      <div class="kv-item"><strong>Привязка сессии к IP</strong><div class="muted">Если IP изменился, панель попросит войти заново.</div></div>
+      <div class="kv-item"><strong>Разделение домена и входа</strong><div class="muted">BASE_URL можно оставить доменом для подписок, а саму админку открыть только по IP:PORT и ограничить разрешёнными IP.</div></div>
+    </div>
+  </section>
 </div>
+
+<script>
+async function restoreBackup() {
+  const input = document.getElementById('backup-file');
+  const file = input && input.files && input.files[0];
+  if (!file) return alert('Выбери файл резервной копии');
+  if (!confirm('Восстановить резервную копию? Текущие данные будут заменены.')) return;
+
+  const text = await file.text();
+  const response = await fetch('/backup/restore', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: text
+  });
+
+  if (response.redirected) {
+    window.location.href = response.url;
+    return;
+  }
+
+  if (!response.ok) {
+    alert(await response.text());
+    return;
+  }
+
+  window.location.href = '/login';
+}
+</script>
 
 <%- include('partials_footer') %>
