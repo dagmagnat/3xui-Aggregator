@@ -902,227 +902,116 @@ function fromTotalGbBytes(bytes) {
   return n > 0 ? Math.round(n / 1024 / 1024 / 1024) : 0;
 }
 
+
+function findRemoteClient(settings, uuid, email) {
+  const clients = Array.isArray(settings?.clients) ? settings.clients : [];
+  uuid = String(uuid || '').trim();
+  email = String(email || '').trim();
+  return clients.find(c => uuid && String(c.id || '').trim() === uuid) ||
+         clients.find(c => email && String(c.email || '').trim() === email) || null;
+}
+
+function upsertClientNodeMap(clientRow, node, rc, trafficGb) {
+  const subUrl = buildNativeSubUrl(node, rc.subId || clientRow.sub_slug);
+  const old = db.prepare('SELECT * FROM client_nodes WHERE client_id = ? AND node_id = ?').get(clientRow.id, node.id);
+  if (!old) {
+    const info = db.prepare('INSERT INTO client_nodes (client_id,node_id,remote_email,remote_uuid,remote_sub_url,traffic_gb) VALUES (?,?,?,?,?,?)')
+      .run(clientRow.id, node.id, rc.email || clientRow.login, rc.uuid || clientRow.uuid, subUrl, trafficGb);
+    return { row: db.prepare('SELECT * FROM client_nodes WHERE id = ?').get(info.lastInsertRowid), created: true };
+  }
+  db.prepare('UPDATE client_nodes SET remote_email = ?, remote_uuid = ?, remote_sub_url = ?, traffic_gb = ? WHERE id = ?')
+    .run(rc.email || clientRow.login, rc.uuid || clientRow.uuid, subUrl, trafficGb, old.id);
+  return { row: db.prepare('SELECT * FROM client_nodes WHERE id = ?').get(old.id), created: false };
+}
+
+function buildClientPayloadForImport(node, inbound, rc, clientRow, oldRemote) {
+  const settings = safeParseJsonField(inbound.settings, {});
+  const trafficGb = fromTotalGbBytes(rc.totalGB || 0) || Number(clientRow.traffic_gb || 0);
+  return {
+    id: Number(node.inbound_id),
+    settings: JSON.stringify({ clients: [{
+      id: rc.uuid || clientRow.uuid,
+      email: rc.email || clientRow.login,
+      flow: rc.flow || oldRemote?.flow || settings.clients?.[0]?.flow || '',
+      limitIp: Number(rc.limitIp || clientRow.limit_ip || oldRemote?.limitIp || 1),
+      totalGB: Number(rc.totalGB || toTotalGbBytes(trafficGb)),
+      expiryTime: Number(rc.expiryTime || clientRow.expiry_time || oldRemote?.expiryTime || 0),
+      enable: rc.enable !== false && clientRow.enabled !== 0,
+      tgId: rc.tgId || oldRemote?.tgId || '',
+      subId: rc.subId || oldRemote?.subId || clientRow.sub_slug,
+      reset: Number(rc.reset || clientRow.duration_days || oldRemote?.reset || 0),
+      comment: String(rc.comment || clientRow.comment || oldRemote?.comment || '').trim()
+    }] })
+  };
+}
+
+async function ensureImportedClientOnNode(node, clientRow, rc) {
+  const trafficGb = fromTotalGbBytes(rc.totalGB || 0);
+  const map = upsertClientNodeMap(clientRow, node, rc, trafficGb);
+  const inbound = await getInbound(node);
+  const settings = safeParseJsonField(inbound.settings, {});
+  const oldRemote = findRemoteClient(settings, rc.uuid || clientRow.uuid, rc.email || clientRow.login);
+  const payload = buildClientPayloadForImport(node, inbound, rc, clientRow, oldRemote);
+  if (!oldRemote) {
+    await addClient(node, payload);
+    return { mapCreated: map.created, remoteCreated: true, remoteUpdated: false };
+  }
+  try {
+    await updateClient(node, oldRemote.id || rc.uuid || clientRow.uuid, payload);
+    return { mapCreated: map.created, remoteCreated: false, remoteUpdated: true };
+  } catch (e) {
+    const freshInbound = await getInbound(node);
+    const freshSettings = safeParseJsonField(freshInbound.settings, {});
+    if (!findRemoteClient(freshSettings, rc.uuid || clientRow.uuid, rc.email || clientRow.login)) {
+      await addClient(node, payload);
+      return { mapCreated: map.created, remoteCreated: true, remoteUpdated: false };
+    }
+    throw e;
+  }
+}
+
 async function syncClientsFromSourceNode(sourceNode) {
   const allNodes = db.prepare('SELECT * FROM nodes WHERE enabled = 1 ORDER BY id ASC').all();
-
-  if (!allNodes.length) {
-    throw new Error('Нет доступных узлов');
-  }
-
+  if (!allNodes.length) throw new Error('Нет доступных узлов');
   const remoteClients = await importClientsFromNode(sourceNode);
-
-  let imported = 0;
-  let updated = 0;
-  let mappingsCreated = 0;
-  let remoteCreated = 0;
-  let remoteUpdated = 0;
-  let skipped = 0;
-
+  let imported = 0, updated = 0, mappingsCreated = 0, remoteCreated = 0, remoteUpdated = 0, skipped = 0, failed = 0;
+  const errors = [];
   for (const rc of remoteClients) {
     let clientRow = db.prepare('SELECT * FROM clients WHERE uuid = ?').get(rc.uuid);
     const remoteTrafficGb = fromTotalGbBytes(rc.totalGB);
     const remoteLogin = String(rc.email || '').trim() || 'imported';
-
     if (!clientRow) {
       let subSlug = rc.subId || randomUUID().replace(/-/g, '').slice(0, 16);
-      const slugConflict = db.prepare('SELECT id FROM clients WHERE sub_slug = ?').get(subSlug);
-      if (slugConflict) subSlug = subSlug + '-' + randomUUID().replace(/-/g, '').slice(0, 6);
-
-      const login = makeUniqueLogin(remoteLogin);
-      const displayName = remoteLogin;
-
-      const clientInfo = db.prepare(`
-        INSERT INTO clients (
-          login,
-          display_name,
-          uuid,
-          sub_slug,
-          duration_days,
-          traffic_gb,
-          limit_ip,
-          expiry_time,
-          enabled,
-          comment
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        login,
-        displayName,
-        rc.uuid,
-        subSlug,
-        Number(rc.reset || 0),
-        remoteTrafficGb,
-        rc.limitIp || 1,
-        rc.expiryTime || 0,
-        rc.enable !== false ? 1 : 0,
-        rc.comment || ""
-      );
-
-      clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientInfo.lastInsertRowid);
+      if (db.prepare('SELECT id FROM clients WHERE sub_slug = ?').get(subSlug)) subSlug += '-' + randomUUID().replace(/-/g, '').slice(0, 6);
+      const info = db.prepare('INSERT INTO clients (login,display_name,uuid,sub_slug,duration_days,traffic_gb,limit_ip,expiry_time,enabled,comment) VALUES (?,?,?,?,?,?,?,?,?,?)')
+        .run(makeUniqueLogin(remoteLogin), remoteLogin, rc.uuid, subSlug, Number(rc.reset || 0), remoteTrafficGb, rc.limitIp || 1, rc.expiryTime || 0, rc.enable !== false ? 1 : 0, rc.comment || '');
+      clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(info.lastInsertRowid);
       imported++;
     } else {
       let subSlug = clientRow.sub_slug;
-      if (rc.subId && clientRow.sub_slug !== rc.subId) {
-        const conflict = db.prepare('SELECT id FROM clients WHERE sub_slug = ? AND id != ?')
-          .get(rc.subId, clientRow.id);
-        if (!conflict) subSlug = rc.subId;
-      }
-
+      if (rc.subId && clientRow.sub_slug !== rc.subId && !db.prepare('SELECT id FROM clients WHERE sub_slug = ? AND id != ?').get(rc.subId, clientRow.id)) subSlug = rc.subId;
       const newLogin = makeUniqueLogin(remoteLogin, clientRow.id);
-      const changed =
-        clientRow.login !== newLogin ||
-        clientRow.display_name !== remoteLogin ||
-        clientRow.sub_slug !== subSlug ||
-        Number(clientRow.limit_ip || 0) !== Number(rc.limitIp || 1) ||
-        Number(clientRow.expiry_time || 0) !== Number(rc.expiryTime || 0) ||
-        Number(clientRow.traffic_gb || 0) !== Number(remoteTrafficGb || 0) ||
-        Number(clientRow.enabled || 0) !== (rc.enable !== false ? 1 : 0) ||
-        String(clientRow.comment || "") !== String(rc.comment || "");
-
-      if (changed) {
-        db.prepare(`
-          UPDATE clients
-          SET
-            login = ?,
-            display_name = ?,
-            sub_slug = ?,
-            duration_days = ?,
-            traffic_gb = ?,
-            limit_ip = ?,
-            expiry_time = ?,
-            enabled = ?,
-            comment = ?
-          WHERE id = ?
-        `).run(
-          newLogin,
-          remoteLogin,
-          subSlug,
-          Number(rc.reset || clientRow.duration_days || 0),
-          remoteTrafficGb,
-          rc.limitIp || 1,
-          rc.expiryTime || 0,
-          rc.enable !== false ? 1 : 0,
-          rc.comment || "",
-          clientRow.id
-        );
-
-        clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientRow.id);
-        updated++;
-      }
+      db.prepare('UPDATE clients SET login=?,display_name=?,sub_slug=?,duration_days=?,traffic_gb=?,limit_ip=?,expiry_time=?,enabled=?,comment=? WHERE id=?')
+        .run(newLogin, remoteLogin, subSlug, Number(rc.reset || clientRow.duration_days || 0), remoteTrafficGb, rc.limitIp || 1, rc.expiryTime || 0, rc.enable !== false ? 1 : 0, rc.comment || '', clientRow.id);
+      clientRow = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientRow.id);
+      updated++;
     }
-
     for (const node of allNodes) {
-      let existingMap = db.prepare(`
-        SELECT * FROM client_nodes
-        WHERE client_id = ? AND node_id = ?
-      `).get(clientRow.id, node.id);
-
-      const clientEmail = remoteLogin;
-      const subUrl = buildNativeSubUrl(node, rc.subId || clientRow.sub_slug);
-
-      if (!existingMap) {
-        if (node.id !== sourceNode.id) {
-          let inbound;
-          let settings;
-
-          try {
-            inbound = await getInbound(node);
-            settings = safeParseJsonField(inbound.settings, {});
-          } catch (err) {
-            console.error(`Не удалось получить inbound узла ${node.id}:`, err.message);
-            continue;
-          }
-
-          const payload = {
-            id: Number(node.inbound_id),
-            settings: JSON.stringify({
-              clients: [{
-                id: rc.uuid,
-                email: clientEmail,
-                flow: rc.flow || settings.clients?.[0]?.flow || '',
-                limitIp: rc.limitIp || 1,
-                totalGB: Number(rc.totalGB || 0),
-                expiryTime: rc.expiryTime || 0,
-                enable: rc.enable !== false,
-                tgId: rc.tgId || '',
-                subId: rc.subId || clientRow.sub_slug,
-                reset: rc.reset || 0
-              }]
-            })
-          };
-
-          try {
-            await addClient(node, payload);
-            remoteCreated++;
-          } catch (err) {
-            console.error(`Не удалось добавить клиента ${rc.email} на узел ${node.id}:`, err.message);
-            continue;
-          }
-        }
-
-        db.prepare(`
-          INSERT OR IGNORE INTO client_nodes (
-            client_id,
-            node_id,
-            remote_email,
-            remote_uuid,
-            remote_sub_url,
-            traffic_gb
-          )
-          VALUES (?, ?, ?, ?, ?, ?)
-        `).run(clientRow.id, node.id, clientEmail, rc.uuid, subUrl, remoteTrafficGb);
-
-        mappingsCreated++;
-        continue;
-      }
-
-      const mapChanged =
-        existingMap.remote_email !== clientEmail ||
-        existingMap.remote_uuid !== rc.uuid ||
-        existingMap.remote_sub_url !== subUrl ||
-        Number(existingMap.traffic_gb || 0) !== Number(remoteTrafficGb || 0);
-
-      if (mapChanged) {
-        db.prepare(`
-          UPDATE client_nodes
-          SET remote_email = ?, remote_uuid = ?, remote_sub_url = ?, traffic_gb = ?
-          WHERE id = ?
-        `).run(clientEmail, rc.uuid, subUrl, remoteTrafficGb, existingMap.id);
-
-        existingMap = db.prepare('SELECT * FROM client_nodes WHERE id = ?').get(existingMap.id);
-        updated++;
-      }
-
-      if (node.id !== sourceNode.id) {
-        try {
-          await updateClientOnNode(node, existingMap, clientRow, {
-            email: clientEmail,
-            limit_ip: rc.limitIp || clientRow.limit_ip || 1,
-            duration_days: Number(rc.reset || clientRow.duration_days || 0),
-            traffic_gb: remoteTrafficGb,
-            expiry_time: rc.expiryTime || 0,
-            enabled: rc.enable !== false,
-            subId: rc.subId || clientRow.sub_slug
-          });
-          remoteUpdated++;
-        } catch (err) {
-          console.error(`Не удалось обновить клиента ${rc.email} на узле ${node.id}:`, err.message);
-        }
-      } else {
-        skipped++;
+      try {
+        const r = await ensureImportedClientOnNode(node, clientRow, rc);
+        if (r.mapCreated) mappingsCreated++;
+        if (r.remoteCreated) remoteCreated++;
+        if (r.remoteUpdated) remoteUpdated++;
+        if (Number(node.id) === Number(sourceNode.id)) skipped++;
+      } catch (e) {
+        failed++;
+        const msg = 'Узел ' + node.id + ' (' + (node.name || node.country_name_ru || 'без имени') + '): ' + (e.message || e);
+        errors.push(msg);
+        console.error('Не удалось синхронизировать клиента ' + rc.email + ': ' + msg);
       }
     }
   }
-
-  return {
-    imported,
-    updated,
-    mappingsCreated,
-    remoteCreated,
-    remoteUpdated,
-    skipped,
-    totalSourceClients: remoteClients.length
-  };
+  return { imported, updated, mappingsCreated, remoteCreated, remoteUpdated, skipped, failed, errors: errors.slice(0, 10), totalSourceClients: remoteClients.length };
 }
 
 async function getClientConfigFromNode(node, clientUuid, clientEmail) {
