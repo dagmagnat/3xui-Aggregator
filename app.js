@@ -8,6 +8,8 @@ const Database = require('better-sqlite3');
 const { randomUUID } = require('crypto');
 const fetch = require('node-fetch');
 const QRCode = require('qrcode');
+const fs = require('fs');
+const path = require('path');
 const { encrypt, decrypt } = require('./lib_crypto');
 
 const COUNTRIES = [
@@ -1911,6 +1913,115 @@ function getRemarkFromVlessLine(line) {
 }
 
 
+
+function uniqueList(items) {
+  return [...new Set(items.filter(Boolean))];
+}
+
+function loadIplistDomains(serviceName) {
+  try {
+    const ipListPath = path.join(__dirname, 'data', 'ip-list.json');
+    if (!fs.existsSync(ipListPath)) return [];
+
+    const data = JSON.parse(fs.readFileSync(ipListPath, 'utf8'));
+    const entry = data[serviceName];
+    if (!entry || !Array.isArray(entry.domains)) return [];
+
+    return entry.domains
+      .map(domain => String(domain || '').trim().toLowerCase())
+      .filter(domain => domain && !domain.endsWith('.ru'))
+      .map(domain => `domain:${domain}`);
+  } catch (error) {
+    console.warn('Unable to load ip-list domains:', error.message);
+    return [];
+  }
+}
+
+const ROUTING_PROXY_DOMAINS = uniqueList([
+  // YouTube
+  'geosite:youtube',
+  'domain:youtube.com',
+  'domain:youtu.be',
+  'domain:googlevideo.com',
+  'domain:ytimg.com',
+  'domain:ggpht.com',
+  'domain:youtubei.googleapis.com',
+  'domain:youtube.googleapis.com',
+
+  // Meta / Facebook / Instagram / WhatsApp
+  'geosite:meta',
+  'geosite:facebook',
+  'geosite:instagram',
+  'geosite:whatsapp',
+  'domain:facebook.com',
+  'domain:facebook.net',
+  'domain:fbcdn.net',
+  'domain:fbsbx.com',
+  'domain:messenger.com',
+  'domain:m.me',
+  'domain:instagram.com',
+  'domain:cdninstagram.com',
+  'domain:whatsapp.com',
+  'domain:whatsapp.net',
+  'domain:wa.me',
+
+  // Telegram
+  'geosite:telegram',
+  'domain:telegram.org',
+  'domain:t.me',
+  'domain:telegra.ph',
+  'domain:telegram.me',
+  'domain:tdesktop.com',
+  'domain:telegram-cdn.org',
+
+  // OpenAI / ChatGPT. geosite:chatgpt is intentionally not used because it is
+  // absent in the checked server geosite.dat; chatgpt.com domains are loaded
+  // from data/ip-list.json as a fallback.
+  'geosite:openai',
+  'domain:openai.com',
+  'domain:chat.openai.com',
+  'domain:chatgpt.com',
+  'domain:api.openai.com',
+  'domain:auth.openai.com',
+  'domain:oaistatic.com',
+  'domain:oaiusercontent.com',
+  'domain:cdn.oaistatic.com',
+  'domain:auth0.openai.com',
+  'domain:cdn.auth0.com',
+  ...loadIplistDomains('chatgpt.com')
+]);
+
+const ROUTING_PROXY_IPS = uniqueList([
+  // These are the only checked service GeoIP tags available in the target
+  // /usr/local/x-ui/bin/geoip.dat. Do not add geoip:youtube/instagram/whatsapp/openai/chatgpt
+  // unless they exist on the server, otherwise routing may become unreliable.
+  'geoip:telegram',
+  'geoip:facebook'
+]);
+
+const ROUTING_DIRECT_DOMAINS = uniqueList([
+  'geosite:private',
+  'geosite:category-ru',
+  'geosite:apple',
+  'geosite:apple-pki',
+  'geosite:huawei',
+  'geosite:xiaomi',
+  'geosite:category-android-app-download',
+  'geosite:f-droid',
+  'domain:ozon.ru',
+  'domain:wildberries.ru',
+  'domain:wb.ru',
+  'domain:yandex.ru',
+  'domain:ya.ru',
+  'domain:vk.com',
+  'domain:gosuslugi.ru',
+  'domain:sber.ru',
+  'domain:tbank.ru',
+  'domain:alfabank.ru',
+  'domain:vtb.ru',
+  'domain:mail.ru'
+]);
+
 function buildHappJsonConfigFromLine(client, line, subscriptionName, index = 0) {
   const remark = getRemarkFromVlessLine(line) || `Server ${index + 1}`;
   const config = buildHappJsonConfig(client, [line], remark);
@@ -1934,23 +2045,13 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
 
   return {
     dns: {
-      hosts: {
-        'cloudflare-dns.com': '1.1.1.1',
-        'dns.google': '8.8.8.8'
-      },
       queryStrategy: 'UseIPv4',
       servers: [
-        'https://cloudflare-dns.com/dns-query',
-        'https://dns.google/dns-query',
-        '1.1.1.1',
-        '8.8.8.8'
+        { address: '1.1.1.1', port: 53, skipFallback: false },
+        { address: '8.8.8.8', port: 53, skipFallback: false }
       ],
       tag: 'dns_out'
     },
-    fakedns: [{
-      ipPool: '198.18.0.0/15',
-      poolSize: 10000
-    }],
     inbounds: [
       {
         tag: 'socks',
@@ -1963,7 +2064,7 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
         },
         sniffing: {
           enabled: true,
-          destOverride: ['http', 'tls', 'fakedns']
+          destOverride: ['http', 'tls']
         }
       },
       {
@@ -2030,98 +2131,13 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
         },
         {
           type: 'field',
-          domain: [
-            'geosite:youtube',
-            'domain:youtube.com',
-            'domain:youtu.be',
-            'domain:googlevideo.com',
-            'domain:ytimg.com',
-            'domain:ggpht.com',
-
-            'geosite:facebook',
-            'geosite:instagram',
-            'geosite:meta',
-            'domain:facebook.com',
-            'domain:fbcdn.net',
-            'domain:instagram.com',
-            'domain:cdninstagram.com',
-
-            'geosite:whatsapp',
-            'domain:whatsapp.com',
-            'domain:whatsapp.net',
-            'domain:wa.me',
-            'domain:web.whatsapp.com',
-            'domain:static.whatsapp.net',
-            'domain:mmg.whatsapp.net',
-            'domain:graph.whatsapp.com',
-            'domain:g.whatsapp.net',
-            'domain:facebook.net',
-            'domain:messenger.com',
-            'domain:m.me',
-            'domain:graph.facebook.com',
-            'domain:mqtt-mini.facebook.com',
-
-            'geosite:telegram',
-            'domain:telegram.org',
-            'domain:t.me',
-            'domain:telegra.ph',
-            'domain:telegram.me',
-            'domain:tdesktop.com',
-            'domain:telegram-cdn.org',
-
-            'geosite:github',
-            'domain:github.com',
-            'domain:githubusercontent.com',
-            'domain:githubassets.com',
-            'domain:raw.githubusercontent.com',
-
-            'geosite:openai',
-            'domain:openai.com',
-            'domain:chat.openai.com',
-            'domain:oaistatic.com',
-            'domain:oaiusercontent.com',
-            'domain:auth0.com'
-          ],
+          domain: ROUTING_PROXY_DOMAINS,
+          ip: ROUTING_PROXY_IPS,
           outboundTag: 'proxy'
         },
         {
           type: 'field',
-          ip: [
-            'geoip:telegram'
-          ],
-          outboundTag: 'proxy'
-        },
-        {
-          type: 'field',
-          ip: [
-            'geoip:facebook'
-          ],
-          outboundTag: 'proxy'
-        },
-        {
-          type: 'field',
-          domain: [
-            'geosite:private',
-            'geosite:category-ru',
-            'geosite:apple',
-            'geosite:apple-pki',
-            'geosite:huawei',
-            'geosite:xiaomi',
-            'geosite:category-android-app-download',
-            'geosite:f-droid',
-            'domain:ozon.ru',
-            'domain:wildberries.ru',
-            'domain:wb.ru',
-            'domain:yandex.ru',
-            'domain:ya.ru',
-            'domain:vk.com',
-            'domain:gosuslugi.ru',
-            'domain:sber.ru',
-            'domain:tbank.ru',
-            'domain:alfabank.ru',
-            'domain:vtb.ru',
-            'domain:mail.ru'
-          ],
+          domain: ROUTING_DIRECT_DOMAINS,
           outboundTag: 'direct'
         },
         {
@@ -2170,13 +2186,19 @@ app.get('/json/:slug', async (req, res) => {
 
   const vlessLines = lines.filter(line => String(line).startsWith('vless://'));
 
-  if (vlessLines.length > 1) {
+  if (vlessLines.length > 1 && String(req.query.format || '').toLowerCase() === 'array') {
     return res.json(vlessLines.map((line, index) => buildHappJsonConfigFromLine(client, line, subscriptionName, index)));
   }
 
-  if (vlessLines.length === 1) {
-    const remark = getRemarkFromVlessLine(vlessLines[0]) || subscriptionName;
-    return res.json(buildHappJsonConfigFromLine(client, vlessLines[0], subscriptionName, 0));
+  if (vlessLines.length >= 1) {
+    // Xray JSON exports one concrete node for maximum iOS compatibility.
+    // Use /sub/:slug for region selection; it keeps every VLESS line separate.
+    // Optional: /json/:slug?node=2 exports the second node as standalone JSON.
+    const requestedNode = Number.parseInt(String(req.query.node || '1'), 10);
+    const selectedIndex = Number.isFinite(requestedNode)
+      ? Math.min(Math.max(requestedNode - 1, 0), vlessLines.length - 1)
+      : 0;
+    return res.json(buildHappJsonConfigFromLine(client, vlessLines[selectedIndex], subscriptionName, selectedIndex));
   }
 
   return res.json({
