@@ -1993,18 +1993,10 @@ function buildHappRoutingProfile(subscriptionName) {
       'dns.google': '8.8.8.8'
     },
     DirectSites: [],
-    DirectIp: [
-      'geoip:private',
-      '10.0.0.0/8',
-      '172.16.0.0/12',
-      '192.168.0.0/16',
-      '169.254.0.0/16',
-      '224.0.0.0/4',
-      '255.255.255.255'
-    ],
+    DirectIp: [],
     ProxySites: ROUTING_PROXY_DOMAINS,
     ProxyIp: ROUTING_PROXY_IPS,
-    BlockSites: ['geosite:category-ads-all'],
+    BlockSites: [],
     BlockIp: [],
     DomainStrategy: 'IPIfNonMatch',
     FakeDNS: 'false'
@@ -2018,23 +2010,13 @@ function buildHappRoutingLink(subscriptionName) {
 }
 
 const ROUTING_PROXY_DOMAINS = uniqueList([
-  // YouTube
   'geosite:youtube',
-  'domain:youtube.com',
-  'domain:youtu.be',
-  'domain:googlevideo.com',
-  'domain:ytimg.com',
-  'domain:ggpht.com',
-  'domain:youtubei.googleapis.com',
-  'domain:youtube.googleapis.com',
-
-  // Meta / Facebook / Instagram / WhatsApp
   'geosite:meta',
   'geosite:facebook',
   'geosite:instagram',
   'geosite:whatsapp',
-  'domain:facebook.com',
-  'domain:facebook.net',
+  'geosite:openai',
+  'geosite:telegram',
   'domain:fbcdn.net',
   'domain:fbsbx.com',
   'domain:messenger.com',
@@ -2043,32 +2025,7 @@ const ROUTING_PROXY_DOMAINS = uniqueList([
   'domain:cdninstagram.com',
   'domain:whatsapp.com',
   'domain:whatsapp.net',
-  'domain:wa.me',
-
-  // Telegram
-  'geosite:telegram',
-  'domain:telegram.org',
-  'domain:t.me',
-  'domain:telegra.ph',
-  'domain:telegram.me',
-  'domain:tdesktop.com',
-  'domain:telegram-cdn.org',
-
-  // OpenAI / ChatGPT. geosite:chatgpt is intentionally not used because it is
-  // absent in the checked server geosite.dat; chatgpt.com domains are loaded
-  // from data/ip-list.json as a fallback.
-  'geosite:openai',
-  'domain:openai.com',
-  'domain:chat.openai.com',
-  'domain:chatgpt.com',
-  'domain:api.openai.com',
-  'domain:auth.openai.com',
-  'domain:oaistatic.com',
-  'domain:oaiusercontent.com',
-  'domain:cdn.oaistatic.com',
-  'domain:auth0.openai.com',
-  'domain:cdn.auth0.com',
-  ...loadIplistDomains('chatgpt.com')
+  'domain:wa.me'
 ]);
 
 const ROUTING_PROXY_IPS = uniqueList([
@@ -2206,24 +2163,9 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
       rules: [
         {
           type: 'field',
-          domain: ['geosite:category-ads-all'],
-          outboundTag: 'block'
-        },
-        {
-          type: 'field',
           domain: ROUTING_PROXY_DOMAINS,
           ip: ROUTING_PROXY_IPS,
           outboundTag: 'proxy'
-        },
-        {
-          type: 'field',
-          domain: ROUTING_DIRECT_DOMAINS,
-          outboundTag: 'direct'
-        },
-        {
-          type: 'field',
-          ip: ['geoip:ru', 'geoip:private'],
-          outboundTag: 'direct'
         },
         {
           type: 'field',
