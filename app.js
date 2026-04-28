@@ -2549,6 +2549,68 @@ app.get('/open/:slug', async (req, res) => {
   });
 });
 
+
+app.get('/debug/sub/:slug', requireAuth, async (req, res) => {
+  try {
+    const client = db.prepare('SELECT * FROM clients WHERE sub_slug = ?').get(req.params.slug);
+    if (!client) return res.status(404).json({ error: 'client not found' });
+
+    const lines = await buildSubscriptionLines(client, true);
+    const mappings = db.prepare(`
+      SELECT
+        cn.client_id,
+        cn.node_id,
+        cn.remote_email,
+        cn.remote_uuid,
+        n.enabled,
+        n.last_status,
+        n.name,
+        n.country_name_ru,
+        n.label_suffix,
+        n.inbound_id,
+        CASE WHEN nic.node_id IS NULL THEN 0 ELSE 1 END AS has_cache
+      FROM client_nodes cn
+      JOIN nodes n ON n.id = cn.node_id
+      LEFT JOIN node_inbound_cache nic ON nic.node_id = n.id AND nic.inbound_id = n.inbound_id
+      WHERE cn.client_id = ?
+      ORDER BY n.id DESC
+    `).all(client.id);
+
+    const allEnabledNodes = db.prepare(`
+      SELECT
+        n.id,
+        n.enabled,
+        n.last_status,
+        n.name,
+        n.country_name_ru,
+        n.label_suffix,
+        n.inbound_id,
+        CASE WHEN nic.node_id IS NULL THEN 0 ELSE 1 END AS has_cache
+      FROM nodes n
+      LEFT JOIN node_inbound_cache nic ON nic.node_id = n.id AND nic.inbound_id = n.inbound_id
+      WHERE n.enabled = 1
+      ORDER BY n.id DESC
+    `).all();
+
+    res.json({
+      client: {
+        id: client.id,
+        login: client.login,
+        uuid: client.uuid,
+        sub_slug: client.sub_slug,
+        enabled: client.enabled
+      },
+      line_count: lines.length,
+      lines,
+      mapped_nodes: mappings,
+      enabled_nodes: allEnabledNodes
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+
 app.get('/healthz', async (req, res) => {
   res.json({
     ok: true,
