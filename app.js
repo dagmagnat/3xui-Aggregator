@@ -247,6 +247,13 @@ function initDb() {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(client_id, node_id)
     );
+
+    CREATE TABLE IF NOT EXISTS node_inbound_cache (
+      node_id INTEGER PRIMARY KEY,
+      inbound_id INTEGER NOT NULL,
+      inbound_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   try { db.prepare(`ALTER TABLE nodes ADD COLUMN country_code TEXT DEFAULT ''`).run(); } catch (_) {}
@@ -539,9 +546,42 @@ function flattenForm(obj, prefix = '', out = {}) {
   return out;
 }
 
+function getCachedInbound(node) {
+  const row = db.prepare('SELECT inbound_json FROM node_inbound_cache WHERE node_id = ? AND inbound_id = ?')
+    .get(Number(node.id), Number(node.inbound_id));
+
+  if (!row || !row.inbound_json) return null;
+  return safeParseJsonField(row.inbound_json, null);
+}
+
+function saveInboundCache(node, inbound) {
+  if (!node || !node.id || !inbound) return;
+
+  db.prepare(`
+    INSERT INTO node_inbound_cache (node_id, inbound_id, inbound_json, updated_at)
+    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(node_id) DO UPDATE SET
+      inbound_id = excluded.inbound_id,
+      inbound_json = excluded.inbound_json,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(Number(node.id), Number(node.inbound_id), JSON.stringify(inbound));
+}
+
 async function getInbound(node) {
   const data = await apiGet(node, `/panel/api/inbounds/get/${node.inbound_id}`);
-  return data.obj || data;
+  const inbound = data.obj || data;
+  saveInboundCache(node, inbound);
+  return inbound;
+}
+
+async function getInboundFast(node) {
+  const cached = getCachedInbound(node);
+  if (cached) return cached;
+
+  const data = await apiGet(node, `/panel/api/inbounds/get/${node.inbound_id}`);
+  const inbound = data.obj || data;
+  saveInboundCache(node, inbound);
+  return inbound;
 }
 
 async function getInbounds(node) {
@@ -638,7 +678,11 @@ async function fetchSubscriptionLines(url) {
 }
 
 async function buildSubscriptionLines(clientRow, includeOffline = true) {
-  const rows = db.prepare(`
+  // v9: subscriptions/JSON must not depend on live API responses from every node.
+  // The aggregator uses its local DB mappings first and cached inbound settings when a node is offline.
+  // If a client was created outside the aggregator but uses the same UUID/email, enabled nodes are added as
+  // fallback rows too; this prevents one unavailable node from making other regions disappear.
+  const mappedRows = db.prepare(`
     SELECT
       cn.id AS client_node_id,
       cn.remote_sub_url,
@@ -662,9 +706,37 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
     FROM client_nodes cn
     JOIN nodes n ON n.id = cn.node_id
     WHERE cn.client_id = ?
-    ORDER BY cn.id ASC
+    ORDER BY n.id DESC, cn.id ASC
   `).all(clientRow.id);
 
+  const mappedNodeIds = new Set(mappedRows.map(row => Number(row.node_id)));
+  const fallbackNodes = db.prepare(`
+    SELECT
+      NULL AS client_node_id,
+      '' AS remote_sub_url,
+      ? AS remote_uuid,
+      ? AS remote_email,
+      n.id AS node_id,
+      n.name,
+      n.panel_url,
+      n.panel_path,
+      n.sub_base_url,
+      n.username,
+      n.password_enc,
+      n.inbound_id,
+      n.enabled,
+      n.last_status,
+      n.last_error,
+      n.country_code,
+      n.country_name_ru,
+      n.country_flag,
+      n.label_suffix
+    FROM nodes n
+    WHERE n.enabled = 1
+    ORDER BY n.id DESC
+  `).all(clientRow.uuid, clientRow.login).filter(row => !mappedNodeIds.has(Number(row.node_id)));
+
+  const rows = [...mappedRows, ...fallbackNodes];
   const lines = [];
   const seen = new Set();
 
@@ -673,7 +745,17 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
       if (Number(row.enabled) !== 1) continue;
       if (!includeOffline && row.last_status === 'offline') continue;
 
-      const inbound = await getInbound(row);
+      let inbound = getCachedInbound(row);
+
+      if (!inbound) {
+        try {
+          inbound = await getInboundFast(row);
+        } catch (err) {
+          console.error(`No cached inbound and node is unavailable (${row.node_id}):`, err.message);
+          continue;
+        }
+      }
+
       const stream = safeParseJsonField(inbound.streamSettings, {});
       let subUrl = '';
 
@@ -681,7 +763,7 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
         subUrl = buildVlessRealityLink(
           row,
           inbound,
-          row.remote_uuid,
+          row.remote_uuid || clientRow.uuid,
           clientRow.display_name,
           getNodePublicName(row)
         );
