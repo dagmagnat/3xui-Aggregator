@@ -12,16 +12,17 @@
     <p class="muted">Отсканируй QR-код или открой ссылку в приложении.</p>
 
     <div class="qr-box">
-      <img src="/qr?text=<%= encodeURIComponent(subUrl) %>" alt="QR" />
+      <img src="/qr?text=<%= encodeURIComponent(jsonUrl) %>" alt="QR" />
     </div>
 
     <div class="public-actions">
       <a class="link-btn" href="<%= subUrl %>">Открыть SUB</a>
       <a class="link-btn secondary" href="<%= jsonUrl %>">Открыть JSON</a>
-      <a class="link-btn" href="happ://import?url=<%= encodeURIComponent(subUrl) %>">Добавить в Happ</a>
+      <a class="link-btn" href="happ://import?url=<%= encodeURIComponent(jsonUrl) %>">Добавить JSON в Happ</a>
+      <a class="link-btn secondary" href="happ://import?url=<%= encodeURIComponent(subUrl) %>">Добавить SUB в Happ</a>
     </div>
 
-    <p class="code-inline public-url"><%= subUrl %></p>
+    <p class="code-inline public-url"><%= jsonUrl %></p>
   </main>
 </body>
 </html>
