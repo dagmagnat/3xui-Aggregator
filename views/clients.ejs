@@ -179,24 +179,14 @@
             <td><%= client.login %></td>
             <td class="comment-cell"><%= client.comment || "-" %></td>
             <td class="limit-cell">
-              <div class="limit-summary">
-                <span class="limit-main"><% if (client.traffic_gb && client.traffic_gb > 0) { %><%= client.traffic_gb %> ГБ<% } else { %>∞<% } %></span>
-                <span class="limit-sep">/</span>
-                <span class="limit-main"><% if (client.duration_days && client.duration_days > 0) { %><%= client.duration_days %> дн.<% } else { %>∞<% } %></span>
+              <% const hasNodeLimits = client.node_limits && client.node_limits.some(nl => nl.client_node_id && ((nl.traffic_gb && nl.traffic_gb > 0) || nl.enabled === 0)); %>
+              <div class="limit-compact">
+                <span class="limit-pill" title="Общий лимит трафика"><span class="limit-label">ГБ</span><strong><% if (client.traffic_gb && client.traffic_gb > 0) { %><%= client.traffic_gb %><% } else { %>∞<% } %></strong></span>
+                <span class="limit-pill" title="Срок"><span class="limit-label">Дн.</span><strong><% if (client.duration_days && client.duration_days > 0) { %><%= client.duration_days %><% } else { %>∞<% } %></strong></span>
+                <% if (hasNodeLimits) { %>
+                  <button type="button" class="limit-detail-btn" onclick="openLimitDetails(<%= client.id %>)">Лимиты узлов</button>
+                <% } %>
               </div>
-              <% if (client.node_limits && client.node_limits.some(nl => nl.client_node_id && ((nl.traffic_gb && nl.traffic_gb > 0) || nl.enabled === 0))) { %>
-                <div class="node-limits" aria-label="Лимиты по узлам">
-                  <% client.node_limits.filter(nl => nl.client_node_id && ((nl.traffic_gb && nl.traffic_gb > 0) || nl.enabled === 0)).forEach(nl => { 
-                    const suffix = (nl.label_suffix || '').trim();
-                    const nodeTitle = suffix ? ((nl.country_name_ru || nl.name) + ' / ' + suffix) : (nl.country_name_ru || nl.name);
-                  %>
-                    <div class="node-limit-row <%= nl.enabled === 0 ? 'disabled' : '' %>">
-                      <span class="node-limit-name"><%= nodeTitle %></span>
-                      <span class="node-limit-value"><%= nl.enabled === 0 ? 'выкл.' : nl.traffic_gb + ' ГБ' %></span>
-                    </div>
-                  <% }) %>
-                </div>
-              <% } %>
             </td>
             <td><span class="badge <%= clientEnabled ? 'online' : 'offline' %>"><%= clientEnabled ? 'Включён' : 'Отключён' %></span></td>
             <% if (showSubLinks) { %>
@@ -303,6 +293,38 @@
   </div>
 <% }) %>
 
+<% clients.forEach(client => { %>
+  <% const details = (client.node_limits || []).filter(nl => nl.client_node_id && ((nl.traffic_gb && nl.traffic_gb > 0) || nl.enabled === 0)); %>
+  <% if (details.length) { %>
+    <div id="limitDetails-<%= client.id %>" class="modal hidden" onclick="closeLimitDetails(event, <%= client.id %>)">
+      <div class="modal-card limit-details-card" onclick="event.stopPropagation()">
+        <button type="button" class="modal-close" onclick="hideLimitDetails(<%= client.id %>)">×</button>
+        <h2>Лимиты узлов</h2>
+        <p class="muted"><%= client.login %></p>
+        <div class="limit-details-list">
+          <% details.forEach(nl => {
+            const suffix = (nl.label_suffix || '').trim();
+            const nodeTitle = suffix ? ((nl.country_name_ru || nl.name) + ' / ' + suffix) : (nl.country_name_ru || nl.name);
+          %>
+            <div class="limit-details-row <%= nl.enabled === 0 ? 'disabled' : '' %>">
+              <span><%= nodeTitle %></span>
+              <strong><%= nl.enabled === 0 ? 'выключен' : nl.traffic_gb + ' ГБ' %></strong>
+            </div>
+          <% }) %>
+        </div>
+      </div>
+    </div>
+  <% } %>
+<% }) %>
+
+<div id="loadingModal" class="modal hidden loading-modal" aria-live="polite">
+  <div class="modal-card loading-card">
+    <div class="loader-ring"></div>
+    <h2 id="loadingTitle">Загрузка</h2>
+    <p class="muted" id="loadingText">Идёт импорт или обновление подписок. Не закрывайте страницу.</p>
+  </div>
+</div>
+
 <div id="qrModal" class="modal hidden" onclick="hideQr(event)">
   <div class="modal-card" onclick="event.stopPropagation()">
     <button class="modal-close" onclick="closeQr()">×</button>
@@ -342,7 +364,23 @@ function hideQr(e) { if (e.target.id === 'qrModal') closeQr(); }
 function openClientEditor(id) { document.getElementById('clientEditor-' + id).classList.remove('hidden'); }
 function hideClientEditor(id) { document.getElementById('clientEditor-' + id).classList.add('hidden'); }
 function closeClientEditor(e, id) { if (e.target.id === 'clientEditor-' + id) hideClientEditor(id); }
+function openLimitDetails(id) { document.getElementById('limitDetails-' + id)?.classList.remove('hidden'); }
+function hideLimitDetails(id) { document.getElementById('limitDetails-' + id)?.classList.add('hidden'); }
+function closeLimitDetails(e, id) { if (e.target.id === 'limitDetails-' + id) hideLimitDetails(id); }
+function showLoading(title, text) {
+  const modal = document.getElementById('loadingModal');
+  if (!modal) return;
+  document.getElementById('loadingTitle').textContent = title || 'Загрузка';
+  document.getElementById('loadingText').textContent = text || 'Операция выполняется. Не закрывайте страницу.';
+  modal.classList.remove('hidden');
+}
 document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('form[action="/clients/import"], form[action="/clients/refresh-subscriptions"]').forEach(form => {
+    form.addEventListener('submit', () => {
+      const isImport = form.getAttribute('action') === '/clients/import';
+      showLoading(isImport ? 'Идёт импорт' : 'Идёт обновление', isImport ? 'Клиенты импортируются и создаются на узлах. Это может занять время.' : 'Подписки синхронизируются. Это может занять время.');
+    });
+  });
   const selectAll = document.getElementById('selectAllNodes');
   if (selectAll) {
     selectAll.addEventListener('change', () => {

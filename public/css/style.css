@@ -1655,3 +1655,102 @@ input.inline[type="checkbox"] {
   font-weight: 900;
   white-space: nowrap;
 }
+
+/* Compact limit column and import loading overlay */
+.limit-cell {
+  min-width: 170px;
+  white-space: normal;
+}
+.limit-compact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  max-width: 210px;
+}
+.limit-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(26, 74, 118, .78);
+  border: 1px solid rgba(93, 157, 255, .38);
+  color: #f4f9ff;
+  line-height: 1;
+  white-space: nowrap;
+}
+.limit-label {
+  color: #9fc0e6;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.limit-pill strong {
+  font-size: 14px;
+  font-weight: 900;
+}
+.limit-detail-btn {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(93, 157, 255, .45);
+  background: linear-gradient(180deg, rgba(41, 118, 222, .45), rgba(28, 83, 158, .45));
+  color: #eef6ff;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.limit-detail-btn:hover { filter: brightness(1.08); }
+.limit-details-card { max-width: 460px; }
+.limit-details-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+}
+.limit-details-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 13px;
+  border-radius: 14px;
+  background: rgba(15, 48, 82, .72);
+  border: 1px solid rgba(88, 151, 224, .28);
+}
+.limit-details-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #dbeaff;
+  font-weight: 800;
+}
+.limit-details-row strong {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.09);
+  color: #fff;
+}
+.limit-details-row.disabled {
+  background: rgba(255, 76, 112, .12);
+  border-color: rgba(255, 76, 112, .35);
+}
+.loading-modal {
+  z-index: 9999;
+  backdrop-filter: blur(4px);
+}
+.loading-card {
+  max-width: 390px;
+  text-align: center;
+  align-items: center;
+}
+.loader-ring {
+  width: 52px;
+  height: 52px;
+  margin: 4px auto 14px;
+  border-radius: 50%;
+  border: 5px solid rgba(255,255,255,.18);
+  border-top-color: #45a2ff;
+  animation: loaderSpin .8s linear infinite;
+}
+@keyframes loaderSpin { to { transform: rotate(360deg); } }

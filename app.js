@@ -1150,10 +1150,10 @@ app.get('/dashboard', requireAuth, (req, res) => {
   const nodes = db.prepare('SELECT * FROM nodes ORDER BY id DESC').all();
   const expiringClients = db.prepare(`
     SELECT * FROM clients
-    WHERE enabled = 1 AND expiry_time > 0 AND expiry_time <= ?
+    WHERE enabled = 1 AND expiry_time > ? AND expiry_time <= ?
     ORDER BY expiry_time ASC
     LIMIT 25
-  `).all(week);
+  `).all(now, week);
 
   render(res, 'dashboard', {
     stats,
