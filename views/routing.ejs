@@ -14,22 +14,11 @@
         <span><strong>Использовать маршрутизацию</strong><small>Если выключить, JSON будет без proxy-правил и почти всё пойдёт напрямую.</small></span>
       </label>
 
-      <h3>Happ: VPN Routing</h3>
-      <label class="switch-row">
-        <input type="checkbox" name="happ_auto_routing_enabled" value="1" <%= happAutoRoutingEnabled ? 'checked' : '' %> />
-        <span><strong>Создавать маршрутизацию VPN Routing в Happ</strong><small>Если выключено, SUB больше не отправляет deeplink/header маршрутизации в Happ. Это убирает ошибку вроде code not found in geosite.dat: RU.</small></span>
-      </label>
-      <div class="form-grid" style="margin-top:12px;">
-        <div class="field half">
-          <label>Happ GeoIP URL</label>
-          <input name="happ_geoip_url" value="<%= happGeoipUrl %>" placeholder="https://.../geoip.dat" />
-        </div>
-        <div class="field half">
-          <label>Happ GeoSite URL</label>
-          <input name="happ_geosite_url" value="<%= happGeositeUrl %>" placeholder="https://.../geosite.dat" />
-        </div>
+      <h3>Режим</h3>
+      <div class="mode-grid">
+        <label class="preset-card"><input type="radio" name="routing_mode" value="proxy-selected" <%= routingMode !== 'proxy-except' ? 'checked' : '' %> /><span><strong>Через proxy только выбранное</strong><small>Как сейчас: готовые сервисы и дополнительные списки.</small></span></label>
+        <label class="preset-card"><input type="radio" name="routing_mode" value="proxy-except" <%= routingMode === 'proxy-except' ? 'checked' : '' %> /><span><strong>Всё через proxy, кроме...</strong><small>Исключения идут напрямую, остальной TCP/UDP трафик — в proxy.</small></span></label>
       </div>
-      <p class="hint">Эти ссылки используются только для автоматической маршрутизации Happ. В JSON-профиль они не встраиваются как тысячи доменов.</p>
 
       <h3>Готовые сервисы</h3>
       <p class="hint">Выбери нужные сервисы. Система сама добавит правильные <code>geosite</code> и доступные <code>geoip</code>.</p>
@@ -56,6 +45,25 @@
         </div>
       </div>
 
+      <h3>Исключения для режима «всё кроме»</h3>
+      <div class="form-grid">
+        <div class="field half"><label>Кроме domain / geosite → direct</label><textarea name="except_domains" rows="7" placeholder="geosite:ru&#10;geosite:category-ru&#10;domain:bank.ru"><%= exceptDomainsText %></textarea><small class="hint">Для RU добавь <code>geosite:ru</code> или <code>geosite:category-ru</code>, если такой тег есть в твоём geosite.dat.</small></div>
+        <div class="field half"><label>Кроме ip / geoip → direct</label><textarea name="except_ips" rows="7" placeholder="geoip:ru&#10;10.0.0.0/8"><%= exceptIpsText %></textarea><small class="hint">Для российских IP добавь <code>geoip:ru</code>.</small></div>
+      </div>
+
+      <h3>Внешние источники geosite / geoip</h3>
+      <div class="field"><textarea name="geodata_urls" rows="4" placeholder="https://github.com/user/repo/releases/latest/download/geosite.dat&#10;https://github.com/user/repo/releases/latest/download/geoip.dat"><%= geodataUrlsText %></textarea><small class="hint">Ссылки сохраняются как справочник для твоих сборок. Обычный JSON-профиль Xray/HAPP сам не скачивает geosite.dat с URL — файл должен быть установлен в клиенте или сборке.</small></div>
+
+      <h3>VPN Routing в Happ</h3>
+      <label class="switch-row">
+        <input type="checkbox" name="happ_auto_routing_enabled" value="1" <%= happAutoRoutingEnabled ? 'checked' : '' %> />
+        <span><strong>Создавать маршрутизацию VPN Routing в Happ</strong><small>Если выключено, ссылка <code>/sub/:slug</code> не будет отправлять Happ отдельную маршрутизацию и не будет пытаться загрузить GeoSite/GeoIP внутри приложения.</small></span>
+      </label>
+      <div class="form-grid" style="margin-top:12px;">
+        <div class="field half"><label>Happ GeoIP URL</label><input type="url" name="happ_geoip_url" value="<%= happGeoipUrl %>" placeholder="https://.../geoip.dat" /><small class="hint">Используется только если включён VPN Routing в Happ.</small></div>
+        <div class="field half"><label>Happ GeoSite URL</label><input type="url" name="happ_geosite_url" value="<%= happGeositeUrl %>" placeholder="https://.../geosite.dat" /><small class="hint">Используется только если включён VPN Routing в Happ.</small></div>
+      </div>
+
       <div class="actions">
         <button type="submit">Сохранить и применить</button>
       </div>
@@ -70,24 +78,30 @@
         <div class="muted"><code><%= jsonUrlExample %></code></div>
       </div>
       <div class="kv-item">
-        <strong>Через proxy пойдут домены</strong>
-        <% if (proxyDomains.length) { %>
-          <pre class="routing-preview"><%= proxyDomains.join('\n') %></pre>
+        <strong><%= routingMode === 'proxy-except' ? 'Через direct пойдут домены-исключения' : 'Через proxy пойдут домены' %></strong>
+        <% const domainPreview = routingMode === 'proxy-except' ? directDomains : proxyDomains; %>
+        <% if (domainPreview.length) { %>
+          <pre class="routing-preview"><%= domainPreview.join('\n') %></pre>
         <% } else { %>
           <div class="muted">Нет доменных правил.</div>
         <% } %>
       </div>
       <div class="kv-item">
-        <strong>Через proxy пойдут IP</strong>
-        <% if (proxyIps.length) { %>
-          <pre class="routing-preview"><%= proxyIps.join('\n') %></pre>
+        <strong><%= routingMode === 'proxy-except' ? 'Через direct пойдут IP-исключения' : 'Через proxy пойдут IP' %></strong>
+        <% const ipPreview = routingMode === 'proxy-except' ? directIps : proxyIps; %>
+        <% if (ipPreview.length) { %>
+          <pre class="routing-preview"><%= ipPreview.join('\n') %></pre>
         <% } else { %>
           <div class="muted">Нет IP-правил.</div>
         <% } %>
       </div>
       <div class="kv-item">
+        <strong>VPN Routing в Happ</strong>
+        <div class="muted"><%= happAutoRoutingEnabled ? 'Включён: /sub/:slug будет добавлять отдельный VPN Routing в Happ.' : 'Выключен: /sub/:slug не добавляет отдельный VPN Routing в Happ.' %></div>
+      </div>
+      <div class="kv-item">
         <strong>Всё остальное</strong>
-        <div class="muted">Идёт напрямую через <code>direct</code>. Отдельное правило для <code>.ru</code> не создаётся, чтобы не добавлять лишнюю нагрузку.</div>
+        <div class="muted"><%= routingMode === 'proxy-except' ? 'Идёт через proxy. Исключения выше идут напрямую.' : 'Идёт напрямую через direct.' %></div>
       </div>
     </div>
   </section>
