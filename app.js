@@ -712,35 +712,10 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
     ORDER BY n.id DESC, cn.id ASC
   `).all(clientRow.id);
 
-  const mappedNodeIds = new Set(mappedRows.map(row => Number(row.node_id)));
-  const fallbackNodes = db.prepare(`
-    SELECT
-      NULL AS client_node_id,
-      '' AS remote_sub_url,
-      ? AS remote_uuid,
-      ? AS remote_email,
-      1 AS client_node_enabled,
-      n.id AS node_id,
-      n.name,
-      n.panel_url,
-      n.panel_path,
-      n.sub_base_url,
-      n.username,
-      n.password_enc,
-      n.inbound_id,
-      n.enabled AS node_enabled,
-      n.last_status,
-      n.last_error,
-      n.country_code,
-      n.country_name_ru,
-      n.country_flag,
-      n.label_suffix
-    FROM nodes n
-    WHERE n.enabled = 1
-    ORDER BY n.id DESC
-  `).all(clientRow.uuid, clientRow.login).filter(row => !mappedNodeIds.has(Number(row.node_id)));
-
-  const rows = [...mappedRows, ...fallbackNodes];
+  // Важно: подписка должна содержать только те узлы, которые реально назначены клиенту.
+  // Раньше здесь был fallback на все enabled-ноды. Из-за него при создании клиента
+  // на одном выбранном узле /sub и /json всё равно отдавали все регионы.
+  const rows = mappedRows;
   const lines = [];
   const seen = new Set();
 
