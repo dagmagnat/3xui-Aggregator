@@ -54,15 +54,7 @@
       <h3>Внешние источники geosite / geoip</h3>
       <div class="field"><textarea name="geodata_urls" rows="4" placeholder="https://github.com/user/repo/releases/latest/download/geosite.dat&#10;https://github.com/user/repo/releases/latest/download/geoip.dat"><%= geodataUrlsText %></textarea><small class="hint">Ссылки сохраняются как справочник для твоих сборок. Обычный JSON-профиль Xray/HAPP сам не скачивает geosite.dat с URL — файл должен быть установлен в клиенте или сборке.</small></div>
 
-      <h3>VPN Routing в Happ</h3>
-      <label class="switch-row">
-        <input type="checkbox" name="happ_auto_routing_enabled" value="1" <%= happAutoRoutingEnabled ? 'checked' : '' %> />
-        <span><strong>Создавать маршрутизацию VPN Routing в Happ</strong><small>Если выключено, ссылка <code>/sub/:slug</code> не будет отправлять Happ отдельную маршрутизацию и не будет пытаться загрузить GeoSite/GeoIP внутри приложения.</small></span>
-      </label>
-      <div class="form-grid" style="margin-top:12px;">
-        <div class="field half"><label>Happ GeoIP URL</label><input type="url" name="happ_geoip_url" value="<%= happGeoipUrl %>" placeholder="https://.../geoip.dat" /><small class="hint">Используется только если включён VPN Routing в Happ.</small></div>
-        <div class="field half"><label>Happ GeoSite URL</label><input type="url" name="happ_geosite_url" value="<%= happGeositeUrl %>" placeholder="https://.../geosite.dat" /><small class="hint">Используется только если включён VPN Routing в Happ.</small></div>
-      </div>
+      <div class="alert ok" style="margin-top:16px;">Отдельный VPN Routing для Happ отключён: Happ больше не получает внешние GeoIP/GeoSite URL и не пытается создать свой routing-файл. Все правила передаются только внутри JSON-подписки.</div>
 
       <div class="actions">
         <button type="submit">Сохранить и применить</button>
@@ -95,10 +87,7 @@
           <div class="muted">Нет IP-правил.</div>
         <% } %>
       </div>
-      <div class="kv-item">
-        <strong>VPN Routing в Happ</strong>
-        <div class="muted"><%= happAutoRoutingEnabled ? 'Включён: /sub/:slug будет добавлять отдельный VPN Routing в Happ.' : 'Выключен: /sub/:slug не добавляет отдельный VPN Routing в Happ.' %></div>
-      </div>
+
       <div class="kv-item">
         <strong>Всё остальное</strong>
         <div class="muted"><%= routingMode === 'proxy-except' ? 'Идёт через proxy. Исключения выше идут напрямую.' : 'Идёт напрямую через direct.' %></div>

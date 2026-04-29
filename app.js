@@ -1190,9 +1190,6 @@ app.get('/routing', requireAuth, (req, res) => {
     exceptIpsText: (cfg.exceptIps || []).join('\n'),
     geodataUrlsText: (cfg.geodataUrls || []).join('\n'),
     routingEnabled: cfg.enabled !== false,
-    happAutoRoutingEnabled: cfg.happAutoRoutingEnabled === true,
-    happGeoipUrl: cfg.happGeoipUrl || DEFAULT_HAPP_GEOIP_URL,
-    happGeositeUrl: cfg.happGeositeUrl || DEFAULT_HAPP_GEOSITE_URL,
     proxyDomains: getRoutingProxyDomains(),
     proxyIps: getRoutingProxyIps(),
     directDomains: getRoutingDirectDomains(),
@@ -1224,10 +1221,7 @@ app.post('/routing', requireAuth, (req, res) => {
       mode: req.body.routing_mode === 'proxy-except' ? 'proxy-except' : 'proxy-selected',
       exceptDomains: parsedExceptDomains.values,
       exceptIps: parsedExceptIps.values,
-      geodataUrls,
-      happAutoRoutingEnabled: req.body.happ_auto_routing_enabled === '1',
-      happGeoipUrl: String(req.body.happ_geoip_url || '').trim() || DEFAULT_HAPP_GEOIP_URL,
-      happGeositeUrl: String(req.body.happ_geosite_url || '').trim() || DEFAULT_HAPP_GEOSITE_URL
+      geodataUrls
     };
     setSetting('routing_config', JSON.stringify(cfg));
     res.redirect('/routing?message=' + encodeURIComponent('Маршрутизация сохранена. Старые JSON-ссылки применят новые правила при следующем обновлении клиента.'));
@@ -2036,14 +2030,10 @@ app.get('/sub/:slug', async (req, res) => {
 
   const lines = await buildSubscriptionLines(client, true);
   const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
-  const happRoutingLink = buildHappRoutingLink(subscriptionName);
 
   setSubscriptionNoCacheHeaders(res, subscriptionName, 'txt');
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
 
-  // HAPP accepts routing/app-management through headers and through body lines.
-  // Send both because QR/import flows on iOS may ignore one of the channels.
-  if (happRoutingLink) res.setHeader('routing', happRoutingLink);
   res.setHeader('profile-title', subscriptionName);
   res.setHeader('profile-update-interval', '1');
   res.setHeader('subscription-auto-update-enable', '1');
@@ -2068,7 +2058,6 @@ app.get('/sub/:slug', async (req, res) => {
     '#sniffing-enable: 1',
     '#subscriptions-collapse: 0',
     '#subscriptions-expand-now: 1',
-    ...(happRoutingLink ? [happRoutingLink] : []),
     ...lines
   ].join('\n');
 
@@ -2177,50 +2166,15 @@ function loadIplistDomains(serviceName) {
 }
 
 
-const DEFAULT_HAPP_GEOIP_URL = 'https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat';
-const DEFAULT_HAPP_GEOSITE_URL = 'https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat';
-
+// Отдельный VPN Routing для Happ отключён намеренно.
+// Маршрутизация теперь передаётся только внутри /json/:slug, чтобы Happ не создавал
+// свой geo-файл/профиль и не падал с ошибками geosite.dat вроде "RU".
 function isHappAutoRoutingEnabled() {
-  return getRoutingConfig().happAutoRoutingEnabled === true;
+  return false;
 }
 
-function buildHappRoutingProfile(subscriptionName) {
-  const now = Math.floor(Date.now() / 1000).toString();
-  return {
-    Name: `${subscriptionName || DEFAULT_SUBSCRIPTION_NAME} routing`,
-    GlobalProxy: 'false',
-    RouteOrder: 'block-proxy-direct',
-    UseChunkFiles: 'true',
-    RemoteDns: '1.1.1.1',
-    RemoteDNSType: 'DoU',
-    RemoteDNSDomain: 'https://cloudflare-dns.com/dns-query',
-    RemoteDNSIP: '1.1.1.1',
-    DomesticDNSType: 'DoU',
-    DomesticDNSDomain: 'https://dns.google/dns-query',
-    DomesticDNSIP: '8.8.8.8',
-    Geoipurl: getRoutingConfig().happGeoipUrl || DEFAULT_HAPP_GEOIP_URL,
-    Geositeurl: getRoutingConfig().happGeositeUrl || DEFAULT_HAPP_GEOSITE_URL,
-    LastUpdated: now,
-    DnsHosts: {
-      'cloudflare-dns.com': '1.1.1.1',
-      'dns.google': '8.8.8.8'
-    },
-    DirectSites: [],
-    DirectIp: [],
-    ProxySites: getRoutingProxyDomains(),
-    ProxyIp: getRoutingProxyIps(),
-    BlockSites: [],
-    BlockIp: [],
-    DomainStrategy: 'IPIfNonMatch',
-    FakeDNS: 'false'
-  };
-}
-
-function buildHappRoutingLink(subscriptionName) {
-  if (!isHappAutoRoutingEnabled()) return '';
-  const json = JSON.stringify(buildHappRoutingProfile(subscriptionName));
-  const encoded = Buffer.from(json, 'utf8').toString('base64');
-  return `happ://routing/onadd/${encoded}`;
+function buildHappRoutingLink() {
+  return '';
 }
 
 const ROUTING_PROXY_DOMAINS = uniqueList([
@@ -2282,9 +2236,7 @@ function getDefaultRoutingConfig() {
     exceptIps: [],
     geodataUrls: [],
     enabled: true,
-    happAutoRoutingEnabled: false,
-    happGeoipUrl: DEFAULT_HAPP_GEOIP_URL,
-    happGeositeUrl: DEFAULT_HAPP_GEOSITE_URL
+    happAutoRoutingEnabled: false
   };
 }
 
@@ -2303,9 +2255,7 @@ function getRoutingConfig() {
       exceptDomains: Array.isArray(parsed.exceptDomains) ? parsed.exceptDomains : fallback.exceptDomains,
       exceptIps: Array.isArray(parsed.exceptIps) ? parsed.exceptIps : fallback.exceptIps,
       geodataUrls: Array.isArray(parsed.geodataUrls) ? parsed.geodataUrls : fallback.geodataUrls,
-      happAutoRoutingEnabled: parsed.happAutoRoutingEnabled === true,
-      happGeoipUrl: typeof parsed.happGeoipUrl === 'string' && parsed.happGeoipUrl.trim() ? parsed.happGeoipUrl.trim() : fallback.happGeoipUrl,
-      happGeositeUrl: typeof parsed.happGeositeUrl === 'string' && parsed.happGeositeUrl.trim() ? parsed.happGeositeUrl.trim() : fallback.happGeositeUrl
+      happAutoRoutingEnabled: false
     };
   } catch (_) {
     return getDefaultRoutingConfig();
@@ -2547,29 +2497,11 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
 }
 
 app.get('/happ-routing/:slug', async (req, res) => {
-  if (!isHappAutoRoutingEnabled()) return res.status(404).send('Happ auto routing is disabled');
-  const client = db.prepare('SELECT * FROM clients WHERE sub_slug = ? AND enabled = 1').get(req.params.slug);
-
-  if (!client) {
-    return res.status(404).send('Subscription not found');
-  }
-
-  const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
-  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.send(buildHappRoutingLink(subscriptionName));
+  res.status(410).send('Happ auto routing is disabled. Use /json/:slug instead.');
 });
 
 app.get('/happ-routing-json/:slug', async (req, res) => {
-  if (!isHappAutoRoutingEnabled()) return res.status(404).json({ error: 'Happ auto routing is disabled' });
-  const client = db.prepare('SELECT * FROM clients WHERE sub_slug = ? AND enabled = 1').get(req.params.slug);
-
-  if (!client) {
-    return res.status(404).json({ error: 'Subscription not found' });
-  }
-
-  const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.json(buildHappRoutingProfile(subscriptionName));
+  res.status(410).json({ error: 'Happ auto routing is disabled. Use /json/:slug instead.' });
 });
 
 app.get('/json/:slug', async (req, res) => {
