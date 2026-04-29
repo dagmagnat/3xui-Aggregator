@@ -1185,9 +1185,15 @@ app.get('/routing', requireAuth, (req, res) => {
     selectedPresets: cfg.presets,
     customDomainsText: (cfg.customDomains || []).join('\n'),
     customIpsText: (cfg.customIps || []).join('\n'),
+    routingMode: cfg.mode || 'proxy-selected',
+    exceptDomainsText: (cfg.exceptDomains || []).join('\n'),
+    exceptIpsText: (cfg.exceptIps || []).join('\n'),
+    geodataUrlsText: (cfg.geodataUrls || []).join('\n'),
     routingEnabled: cfg.enabled !== false,
     proxyDomains: getRoutingProxyDomains(),
     proxyIps: getRoutingProxyIps(),
+    directDomains: getRoutingDirectDomains(),
+    directIps: getRoutingDirectIps(),
     jsonUrlExample: `${BASE_URL}/json/<slug>`,
     message: req.query.message || '',
     error: req.query.error || ''
@@ -1202,13 +1208,20 @@ app.post('/routing', requireAuth, (req, res) => {
     const presets = uniqueList(selectedPresets.map(v => String(v || '').trim()).filter(v => allowedPresetKeys.has(v)));
     const parsedDomains = parseRoutingLines(req.body.custom_domains || '', 'domain');
     const parsedIps = parseRoutingLines(req.body.custom_ips || '', 'ip');
-    const errors = [...parsedDomains.errors, ...parsedIps.errors];
+    const parsedExceptDomains = parseRoutingLines(req.body.except_domains || '', 'domain');
+    const parsedExceptIps = parseRoutingLines(req.body.except_ips || '', 'ip');
+    const geodataUrls = parsePlainLines(req.body.geodata_urls || '').filter(v => /^https?:\/\//i.test(v));
+    const errors = [...parsedDomains.errors, ...parsedIps.errors, ...parsedExceptDomains.errors, ...parsedExceptIps.errors];
     if (errors.length) throw new Error(errors.join(' | '));
     const cfg = {
       enabled: req.body.routing_enabled === '1',
       presets,
       customDomains: parsedDomains.values,
-      customIps: parsedIps.values
+      customIps: parsedIps.values,
+      mode: req.body.routing_mode === 'proxy-except' ? 'proxy-except' : 'proxy-selected',
+      exceptDomains: parsedExceptDomains.values,
+      exceptIps: parsedExceptIps.values,
+      geodataUrls
     };
     setSetting('routing_config', JSON.stringify(cfg));
     res.redirect('/routing?message=' + encodeURIComponent('Маршрутизация сохранена. Старые JSON-ссылки применят новые правила при следующем обновлении клиента.'));
@@ -1225,6 +1238,7 @@ app.get('/settings', requireAuth, (req, res) => {
     subscriptionName,
     adminUsername: currentUser?.username || '',
     adminAllowedIps: getSetting('admin_allowed_ips', ''),
+    showSubLinks: getSetting('show_sub_links', '1') !== '0',
     currentIp: getClientIp(req),
     message: req.query.message || '',
     error: req.query.error || ''
@@ -1257,6 +1271,14 @@ app.post('/settings', requireAuth, (req, res) => {
         value = excluded.value,
         updated_at = CURRENT_TIMESTAMP
     `).run('admin_allowed_ips', adminAllowedIps);
+
+    db.prepare(`
+      INSERT INTO app_settings (key, value, updated_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = CURRENT_TIMESTAMP
+    `).run('show_sub_links', req.body.show_sub_links === '1' ? '1' : '0');
 
     const currentPassword = String(req.body.current_password || '');
     const newUsername = String(req.body.admin_username || '').trim();
@@ -1548,6 +1570,16 @@ app.get('/clients', requireAuth, (req, res) => {
         ORDER BY c.id DESC
       `).all();
 
+  for (const client of clients) {
+    client.node_limits = db.prepare(`
+      SELECT cn.traffic_gb, n.country_code, n.country_name_ru, n.name, n.label_suffix
+      FROM client_nodes cn
+      JOIN nodes n ON n.id = cn.node_id
+      WHERE cn.client_id = ?
+      ORDER BY n.id ASC
+    `).all(client.id);
+  }
+
   const nodes = db.prepare('SELECT * FROM nodes WHERE enabled = 1 ORDER BY id ASC').all();
 
   render(res, 'clients', {
@@ -1557,7 +1589,8 @@ app.get('/clients', requireAuth, (req, res) => {
     error: req.query.error || '',
     baseUrl: BASE_URL,
     q,
-    nextLogin: getNextAutoLogin()
+    nextLogin: getNextAutoLogin(),
+    showSubLinks: getSetting('show_sub_links', '1') !== '0'
   });
 });
 
@@ -1567,6 +1600,7 @@ app.post('/clients', requireAuth, async (req, res) => {
     let nodeIds = req.body.node_ids || [];
 
     if (!Array.isArray(nodeIds)) nodeIds = [nodeIds];
+    nodeIds = uniqueList(nodeIds.map(v => Number(v)).filter(v => Number.isInteger(v) && v > 0));
     if (!nodeIds.length) throw new Error('Нужно выбрать хотя бы один узел');
 
     const cleanLogin = String(login || '').trim() || getNextAutoLogin();
@@ -1721,6 +1755,7 @@ app.post('/clients/:id/sync', requireAuth, async (req, res) => {
     let nodeIds = req.body.node_ids || [];
 
     if (!Array.isArray(nodeIds)) nodeIds = [nodeIds];
+    nodeIds = uniqueList(nodeIds.map(v => Number(v)).filter(v => Number.isInteger(v) && v > 0));
     if (!nodeIds.length) throw new Error('Нужно выбрать хотя бы один узел');
 
     const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
@@ -2228,6 +2263,10 @@ function getDefaultRoutingConfig() {
     presets: ROUTING_PRESETS.map(p => p.key),
     customDomains: ROUTING_DEFAULT_CUSTOM_DOMAINS,
     customIps: [],
+    mode: 'proxy-selected',
+    exceptDomains: [],
+    exceptIps: [],
+    geodataUrls: [],
     enabled: true
   };
 }
@@ -2242,7 +2281,11 @@ function getRoutingConfig() {
       enabled: parsed.enabled !== false,
       presets: Array.isArray(parsed.presets) ? parsed.presets : fallback.presets,
       customDomains: Array.isArray(parsed.customDomains) ? parsed.customDomains : fallback.customDomains,
-      customIps: Array.isArray(parsed.customIps) ? parsed.customIps : fallback.customIps
+      customIps: Array.isArray(parsed.customIps) ? parsed.customIps : fallback.customIps,
+      mode: ['proxy-selected', 'proxy-except'].includes(parsed.mode) ? parsed.mode : (parsed.proxyExcept ? 'proxy-except' : fallback.mode),
+      exceptDomains: Array.isArray(parsed.exceptDomains) ? parsed.exceptDomains : fallback.exceptDomains,
+      exceptIps: Array.isArray(parsed.exceptIps) ? parsed.exceptIps : fallback.exceptIps,
+      geodataUrls: Array.isArray(parsed.geodataUrls) ? parsed.geodataUrls : fallback.geodataUrls
     };
   } catch (_) {
     return getDefaultRoutingConfig();
@@ -2267,6 +2310,10 @@ function normalizeRoutingLine(value, kind) {
   return null;
 }
 
+function parsePlainLines(text) {
+  return uniqueList(String(text || '').split(/[\n,;]+/).map(v => v.trim()).filter(Boolean));
+}
+
 function parseRoutingLines(text, kind) {
   const errors = [];
   const values = [];
@@ -2281,16 +2328,28 @@ function parseRoutingLines(text, kind) {
   return { values: uniqueList(values), errors };
 }
 
+function getRoutingDirectDomains() {
+  const cfg = getRoutingConfig();
+  if (cfg.enabled === false || cfg.mode !== 'proxy-except') return [];
+  return uniqueList(cfg.exceptDomains || []);
+}
+
+function getRoutingDirectIps() {
+  const cfg = getRoutingConfig();
+  if (cfg.enabled === false || cfg.mode !== 'proxy-except') return [];
+  return uniqueList(cfg.exceptIps || []);
+}
+
 function getRoutingProxyDomains() {
   const cfg = getRoutingConfig();
-  if (cfg.enabled === false) return [];
+  if (cfg.enabled === false || cfg.mode === 'proxy-except') return [];
   const presetDomains = ROUTING_PRESETS.filter(p => cfg.presets.includes(p.key)).flatMap(p => p.domains);
   return uniqueList([...presetDomains, ...cfg.customDomains]);
 }
 
 function getRoutingProxyIps() {
   const cfg = getRoutingConfig();
-  if (cfg.enabled === false) return [];
+  if (cfg.enabled === false || cfg.mode === 'proxy-except') return [];
   const presetIps = ROUTING_PRESETS.filter(p => cfg.presets.includes(p.key)).flatMap(p => p.ips);
   return uniqueList([...presetIps, ...cfg.customIps]);
 }
@@ -2329,6 +2388,32 @@ function buildHappJsonConfigFromLine(client, line, subscriptionName, index = 0) 
   config.ps = remark;
   config.title = remark;
   return config;
+}
+
+
+function buildRoutingRules() {
+  const cfg = getRoutingConfig();
+  if (cfg.enabled === false) {
+    return [{ type: 'field', network: 'tcp,udp', outboundTag: 'direct' }];
+  }
+
+  if (cfg.mode === 'proxy-except') {
+    const rules = [];
+    const directDomains = getRoutingDirectDomains();
+    const directIps = getRoutingDirectIps();
+    if (directDomains.length) rules.push({ type: 'field', domain: directDomains, outboundTag: 'direct' });
+    if (directIps.length) rules.push({ type: 'field', ip: directIps, outboundTag: 'direct' });
+    rules.push({ type: 'field', network: 'tcp,udp', outboundTag: 'proxy' });
+    return rules;
+  }
+
+  const rules = [];
+  const proxyDomains = getRoutingProxyDomains();
+  const proxyIps = getRoutingProxyIps();
+  if (proxyDomains.length) rules.push({ type: 'field', domain: proxyDomains, outboundTag: 'proxy' });
+  if (proxyIps.length) rules.push({ type: 'field', ip: proxyIps, outboundTag: 'proxy' });
+  rules.push({ type: 'field', network: 'tcp,udp', outboundTag: 'direct' });
+  return rules;
 }
 
 function buildHappJsonConfig(client, lines, subscriptionName) {
@@ -2424,23 +2509,7 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
     remarks: subscriptionName || DEFAULT_SUBSCRIPTION_NAME,
     routing: {
       domainStrategy: 'IPIfNonMatch',
-      rules: [
-        {
-          type: 'field',
-          domain: getRoutingProxyDomains(),
-          outboundTag: 'proxy'
-        },
-        {
-          type: 'field',
-          ip: getRoutingProxyIps(),
-          outboundTag: 'proxy'
-        },
-        {
-          type: 'field',
-          network: 'tcp,udp',
-          outboundTag: 'direct'
-        }
-      ]
+      rules: buildRoutingRules()
     },
     stats: {},
     happ: {

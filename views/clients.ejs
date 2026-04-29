@@ -161,7 +161,7 @@
             <th>Комментарий</th>
             <th>Лимит</th>
             <th>Статус</th>
-            <th class="link-col">Подписка</th>
+            <% if (showSubLinks) { %><th class="link-col">Подписка</th><% } %>
             <th class="link-col">JSON</th>
             <th class="actions-col">Действия</th>
           </tr>
@@ -181,14 +181,26 @@
             <td>
               <% if (client.traffic_gb && client.traffic_gb > 0) { %><%= client.traffic_gb %> ГБ<% } else { %>∞<% } %>
               / <% if (client.duration_days && client.duration_days > 0) { %><%= client.duration_days %> дн.<% } else { %>∞<% } %>
+              <% if (client.node_limits && client.node_limits.some(nl => nl.traffic_gb && nl.traffic_gb > 0)) { %>
+                <div class="node-limits">
+                  <% client.node_limits.filter(nl => nl.traffic_gb && nl.traffic_gb > 0).forEach(nl => { 
+                    const suffix = (nl.label_suffix || '').trim();
+                    const nodeTitle = suffix ? ((nl.country_name_ru || nl.name) + '/' + suffix) : (nl.country_name_ru || nl.name);
+                  %>
+                    <span class="limit-chip"><%= nodeTitle %>: <%= nl.traffic_gb %> ГБ</span>
+                  <% }) %>
+                </div>
+              <% } %>
             </td>
             <td><span class="badge <%= clientEnabled ? 'online' : 'offline' %>"><%= clientEnabled ? 'Включён' : 'Отключён' %></span></td>
+            <% if (showSubLinks) { %>
             <td class="link-col">
               <div class="btn-row">
                 <button type="button" class="btn-main" onclick="copySubLink('<%= subUrl %>', this)">Скопировать SUB</button>
                 <button type="button" class="btn-qr" onclick="showQr('<%= subUrl %>', '<%= client.login %> · SUB')">QR</button>
               </div>
             </td>
+            <% } %>
             <td class="link-col">
               <div class="btn-row">
                 <button type="button" class="btn-main" onclick="copySubLink('<%= jsonUrl %>', this)">Скопировать JSON</button>

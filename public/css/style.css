@@ -1,12 +1,12 @@
 :root {
-  --bg: #0b1628;
-  --card: #12233b;
-  --card-2: #173057;
+  --bg: #10213a;
+  --card: #182f4e;
+  --card-2: #1d3b66;
   --line: rgba(255,255,255,.13);
   --text: #eef4ff;
   --muted: #b6c8e8;
-  --blue: #2f7cff;
-  --blue-2: #1f6fff;
+  --blue: #4d8dff;
+  --blue-2: #3f80ea;
   --green: #18c37e;
   --red: #ff5d73;
   --orange: #ffb02e;
@@ -22,7 +22,7 @@ body {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   background:
     radial-gradient(circle at top left, rgba(70, 125, 255, 0.22), transparent 28%),
-    linear-gradient(180deg, #0a1628, #0c1b31 60%, #0b182b);
+    linear-gradient(180deg, #10213a, #112a49 60%, #10223d);
   color: var(--text);
 }
 
@@ -41,7 +41,7 @@ a:hover { color: #b6d6ff; }
 
 .sidebar {
   border-right: 1px solid var(--line);
-  background: rgba(5, 11, 22, 0.72);
+  background: rgba(12, 26, 46, 0.82);
   backdrop-filter: blur(10px);
   padding: 24px 18px;
   position: sticky;
@@ -152,7 +152,7 @@ a:hover { color: #b6d6ff; }
 
 .card,
 .stats-card {
-  background: linear-gradient(180deg, rgba(13,26,45,.96), rgba(10,21,36,.98));
+  background: linear-gradient(180deg, rgba(22,44,74,.96), rgba(15,34,58,.98));
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: 0 20px 50px rgba(0,0,0,.25);
@@ -224,7 +224,7 @@ textarea {
   padding: 13px 14px;
   border-radius: 14px;
   border: 1px solid rgba(255,255,255,.14);
-  background: #102542;
+  background: #18365c;
   color: var(--text);
   outline: none;
   font-size: 15px;
@@ -1555,4 +1555,38 @@ input.inline[type="checkbox"] {
   .preset-grid { grid-template-columns: 1fr; }
   .switch-row,
   .preset-card { padding: 12px; }
+}
+
+
+.mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.switch-row.compact {
+  margin: 4px 0 0;
+}
+
+.node-limits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.limit-chip {
+  display: inline-flex;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(77, 141, 255, .18);
+  border: 1px solid rgba(77, 141, 255, .32);
+  color: #dbeaff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .mode-grid { grid-template-columns: 1fr; }
 }
