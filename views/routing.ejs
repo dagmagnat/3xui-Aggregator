@@ -14,6 +14,24 @@
         <span><strong>Использовать маршрутизацию</strong><small>Если выключить, JSON будет без proxy-правил и почти всё пойдёт напрямую.</small></span>
       </label>
 
+      <label class="switch-row">
+        <input type="checkbox" name="routing_all_nodes" value="1" <%= routingAllNodes ? 'checked' : '' %> onchange="document.getElementById('excluded-routing-nodes').style.display = this.checked ? 'none' : 'block'" />
+        <span><strong>Маршруты на всех узлах</strong><small>Если снять галочку, можно выбрать узлы, где JSON будет без routing: весь трафик пойдёт через выбранный VPN-сервер. Узел останется в подписке вместе с остальными.</small></span>
+      </label>
+
+      <div id="excluded-routing-nodes" style="display:<%= routingAllNodes ? 'none' : 'block' %>; margin:12px 0 18px;">
+        <h3>Узлы без маршрутизации</h3>
+        <p class="hint">Отметь серверы, для которых не нужно применять маршруты. Например, РФ/RU сервер: он будет показываться в подписке, но при подключении к нему весь трафик пойдёт через него.</p>
+        <div class="preset-grid">
+          <% nodes.forEach(n => { %>
+            <label class="preset-card">
+              <input type="checkbox" name="routing_excluded_node_ids" value="<%= n.id %>" <%= routingExcludedNodeIds.map(Number).includes(Number(n.id)) ? 'checked' : '' %> />
+              <span><strong><%= n.country_flag || '' %> <%= n.country_name_ru || n.name %></strong><small><%= n.label_suffix || ('inbound ' + n.inbound_id) %></small></span>
+            </label>
+          <% }) %>
+        </div>
+      </div>
+
       <h3>Режим</h3>
       <div class="mode-grid">
         <label class="preset-card"><input type="radio" name="routing_mode" value="proxy-selected" <%= routingMode !== 'proxy-except' ? 'checked' : '' %> /><span><strong>Через proxy только выбранное</strong><small>Как сейчас: готовые сервисы и дополнительные списки.</small></span></label>
@@ -47,7 +65,7 @@
 
       <h3>Исключения для режима «всё кроме»</h3>
       <div class="form-grid">
-        <div class="field half"><label>Кроме domain / geosite → direct</label><textarea name="except_domains" rows="7" placeholder="geosite:ru&#10;geosite:category-ru&#10;domain:bank.ru"><%= exceptDomainsText %></textarea><small class="hint">Для RU добавь <code>geosite:ru</code> или <code>geosite:category-ru</code>, если такой тег есть в твоём geosite.dat.</small></div>
+        <div class="field half"><label>Кроме domain / geosite → direct</label><textarea name="except_domains" rows="7" placeholder="geosite:category-ru&#10;geosite:category-ru&#10;domain:bank.ru"><%= exceptDomainsText %></textarea><small class="hint">Для RU добавь <code>geosite:category-ru</code> или <code>geosite:category-ru</code>, если такой тег есть в твоём geosite.dat.</small></div>
         <div class="field half"><label>Кроме ip / geoip → direct</label><textarea name="except_ips" rows="7" placeholder="geoip:ru&#10;10.0.0.0/8"><%= exceptIpsText %></textarea><small class="hint">Для российских IP добавь <code>geoip:ru</code>.</small></div>
       </div>
 

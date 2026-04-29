@@ -679,7 +679,7 @@ async function fetchSubscriptionLines(url) {
     ));
 }
 
-async function buildSubscriptionLines(clientRow, includeOffline = true) {
+async function buildSubscriptionEntries(clientRow, includeOffline = true) {
   // v9: subscriptions/JSON must not depend on live API responses from every node.
   // The aggregator uses its local DB mappings first and cached inbound settings when a node is offline.
   // If a client was created outside the aggregator but uses the same UUID/email, enabled nodes are added as
@@ -716,7 +716,7 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
   // Раньше здесь был fallback на все enabled-ноды. Из-за него при создании клиента
   // на одном выбранном узле /sub и /json всё равно отдавали все регионы.
   const rows = mappedRows;
-  const lines = [];
+  const entries = [];
   const seen = new Set();
 
   for (const row of rows) {
@@ -751,14 +751,19 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
 
       if (subUrl && !seen.has(subUrl)) {
         seen.add(subUrl);
-        lines.push(subUrl);
+        entries.push({ line: subUrl, nodeId: row.node_id, nodeName: getNodePublicName(row) });
       }
     } catch (err) {
       console.error('Build subscription line failed:', err.message);
     }
   }
 
-  return lines;
+  return entries;
+}
+
+async function buildSubscriptionLines(clientRow, includeOffline = true) {
+  const entries = await buildSubscriptionEntries(clientRow, includeOffline);
+  return entries.map(e => e.line);
 }
 
 function buildVlessRealityLink(node, inbound, uuid, displayName, nodeName) {
@@ -1173,6 +1178,9 @@ app.get('/routing', requireAuth, (req, res) => {
     exceptIpsText: (cfg.exceptIps || []).join('\n'),
     geodataUrlsText: (cfg.geodataUrls || []).join('\n'),
     routingEnabled: cfg.enabled !== false,
+    routingAllNodes: cfg.allNodes !== false,
+    routingExcludedNodeIds: cfg.excludedNodeIds || [],
+    nodes: db.prepare('SELECT * FROM nodes WHERE enabled = 1 ORDER BY id ASC').all(),
     proxyDomains: getRoutingProxyDomains(),
     proxyIps: getRoutingProxyIps(),
     directDomains: getRoutingDirectDomains(),
@@ -1194,6 +1202,10 @@ app.post('/routing', requireAuth, (req, res) => {
     const parsedExceptDomains = parseRoutingLines(req.body.except_domains || '', 'domain');
     const parsedExceptIps = parseRoutingLines(req.body.except_ips || '', 'ip');
     const geodataUrls = parsePlainLines(req.body.geodata_urls || '').filter(v => /^https?:\/\//i.test(v));
+    let excludedNodeIds = req.body.routing_excluded_node_ids || [];
+    if (!Array.isArray(excludedNodeIds)) excludedNodeIds = excludedNodeIds ? [excludedNodeIds] : [];
+    excludedNodeIds = uniqueList(excludedNodeIds.map(v => Number(v)).filter(v => Number.isInteger(v) && v > 0));
+    const allNodes = req.body.routing_all_nodes === '1';
     const errors = [...parsedDomains.errors, ...parsedIps.errors, ...parsedExceptDomains.errors, ...parsedExceptIps.errors];
     if (errors.length) throw new Error(errors.join(' | '));
     const cfg = {
@@ -1204,7 +1216,9 @@ app.post('/routing', requireAuth, (req, res) => {
       mode: req.body.routing_mode === 'proxy-except' ? 'proxy-except' : 'proxy-selected',
       exceptDomains: parsedExceptDomains.values,
       exceptIps: parsedExceptIps.values,
-      geodataUrls
+      geodataUrls,
+      allNodes,
+      excludedNodeIds: allNodes ? [] : excludedNodeIds
     };
     setSetting('routing_config', JSON.stringify(cfg));
     res.redirect('/routing?message=' + encodeURIComponent('Маршрутизация сохранена. Старые JSON-ссылки применят новые правила при следующем обновлении клиента.'));
@@ -1555,10 +1569,20 @@ app.get('/clients', requireAuth, (req, res) => {
 
   for (const client of clients) {
     client.node_limits = db.prepare(`
-      SELECT cn.node_id, cn.traffic_gb, cn.enabled, n.country_code, n.country_name_ru, n.name, n.label_suffix
-      FROM client_nodes cn
-      JOIN nodes n ON n.id = cn.node_id
-      WHERE cn.client_id = ?
+      SELECT
+        n.id AS node_id,
+        n.country_code,
+        n.country_name_ru,
+        n.country_flag,
+        n.name,
+        n.label_suffix,
+        n.inbound_id,
+        cn.id AS client_node_id,
+        cn.traffic_gb,
+        CASE WHEN cn.id IS NULL THEN 0 ELSE cn.enabled END AS enabled
+      FROM nodes n
+      LEFT JOIN client_nodes cn ON cn.node_id = n.id AND cn.client_id = ?
+      WHERE n.enabled = 1
       ORDER BY n.id ASC
     `).all(client.id);
   }
@@ -1897,24 +1921,57 @@ app.post('/clients/:id/edit', requireAuth, async (req, res) => {
     `).run(login, displayName, limitIp, durationDays, trafficGb, expiryTime, comment, clientId);
 
     const updatedClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
-    const mappings = db.prepare('SELECT * FROM client_nodes WHERE client_id = ?').all(clientId);
+    const nodesForEdit = db.prepare('SELECT * FROM nodes WHERE enabled = 1 ORDER BY id ASC').all();
 
-    for (const map of mappings) {
-      const raw = req.body[`node_traffic_gb_${map.node_id}`];
+    for (const node of nodesForEdit) {
+      const raw = req.body[`node_traffic_gb_${node.id}`];
       const nodeTrafficGb = String(raw || '').trim() === '' ? trafficGb : Math.max(0, Number(raw || 0));
-      const nodeEnabled = req.body[`node_enabled_${map.node_id}`] === '1';
+      const nodeEnabled = req.body[`node_enabled_${node.id}`] === '1';
+      const map = db.prepare('SELECT * FROM client_nodes WHERE client_id = ? AND node_id = ?').get(clientId, node.id);
+
       try {
-        const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(map.node_id);
-        if (!node) continue;
-        await updateClientOnNode(node, map, updatedClient, {
-          email: login,
-          limit_ip: limitIp,
-          duration_days: durationDays,
-          traffic_gb: nodeTrafficGb,
-          expiry_time: expiryTime,
-          comment,
-          node_enabled: nodeEnabled
-        });
+        if (map) {
+          await updateClientOnNode(node, map, updatedClient, {
+            email: login,
+            limit_ip: limitIp,
+            duration_days: durationDays,
+            traffic_gb: nodeTrafficGb,
+            expiry_time: expiryTime,
+            comment,
+            node_enabled: nodeEnabled
+          });
+          continue;
+        }
+
+        if (!nodeEnabled) continue;
+
+        const inbound = await getInbound(node);
+        const settings = safeParseJsonField(inbound.settings, {});
+        const subId = updatedClient.sub_slug || randomUUID().replace(/-/g, '').slice(0, 16);
+        const payload = {
+          id: Number(node.inbound_id),
+          settings: JSON.stringify({
+            clients: [{
+              id: updatedClient.uuid,
+              email: login,
+              flow: settings.clients?.[0]?.flow || '',
+              limitIp,
+              totalGB: toTotalGbBytes(nodeTrafficGb),
+              expiryTime,
+              enable: updatedClient.enabled !== 0,
+              tgId: '',
+              subId,
+              reset: durationDays > 0 && nodeTrafficGb > 0 ? durationDays : 0,
+              comment
+            }]
+          })
+        };
+
+        await addClient(node, payload);
+        db.prepare(`
+          INSERT INTO client_nodes (client_id, node_id, remote_email, remote_uuid, remote_sub_url, traffic_gb, enabled)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(clientId, node.id, login, updatedClient.uuid, buildNativeSubUrl(node, subId), nodeTrafficGb, 1);
       } catch (err) {
         console.error('Update client node failed:', err.message);
       }
@@ -2015,7 +2072,8 @@ app.get('/sub/:slug', async (req, res) => {
     return res.status(404).send('Subscription not found');
   }
 
-  const lines = await buildSubscriptionLines(client, true);
+  const entries = await buildSubscriptionEntries(client, true);
+  const lines = entries.map(e => e.line);
   const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
 
   setSubscriptionNoCacheHeaders(res, subscriptionName, 'txt');
@@ -2222,6 +2280,8 @@ function getDefaultRoutingConfig() {
     exceptDomains: [],
     exceptIps: [],
     geodataUrls: [],
+    allNodes: true,
+    excludedNodeIds: [],
     enabled: true,
     happAutoRoutingEnabled: false
   };
@@ -2242,6 +2302,8 @@ function getRoutingConfig() {
       exceptDomains: Array.isArray(parsed.exceptDomains) ? parsed.exceptDomains : fallback.exceptDomains,
       exceptIps: Array.isArray(parsed.exceptIps) ? parsed.exceptIps : fallback.exceptIps,
       geodataUrls: Array.isArray(parsed.geodataUrls) ? parsed.geodataUrls : fallback.geodataUrls,
+      allNodes: parsed.allNodes !== false,
+      excludedNodeIds: Array.isArray(parsed.excludedNodeIds) ? parsed.excludedNodeIds.map(Number).filter(Boolean) : fallback.excludedNodeIds,
       happAutoRoutingEnabled: false
     };
   } catch (_) {
@@ -2334,9 +2396,9 @@ const ROUTING_DIRECT_DOMAINS = uniqueList([
   'domain:mail.ru'
 ]);
 
-function buildHappJsonConfigFromLine(client, line, subscriptionName, index = 0) {
+function buildHappJsonConfigFromLine(client, line, subscriptionName, index = 0, routingEnabledForThisConfig = true) {
   const remark = getRemarkFromVlessLine(line) || `Server ${index + 1}`;
-  const config = buildHappJsonConfig(client, [line], remark);
+  const config = buildHappJsonConfig(client, [line], remark, routingEnabledForThisConfig);
   // HAPP and other JSON-array importers use these fields as the visible
   // subscription/server title. Keep them equal to the node remark so every
   // country/region from the node settings is shown as a separate region.
@@ -2373,7 +2435,14 @@ function buildRoutingRules() {
   return rules;
 }
 
-function buildHappJsonConfig(client, lines, subscriptionName) {
+function isRoutingEnabledForNode(nodeId) {
+  const cfg = getRoutingConfig();
+  if (cfg.enabled === false) return false;
+  if (cfg.allNodes === false && (cfg.excludedNodeIds || []).map(Number).includes(Number(nodeId))) return false;
+  return true;
+}
+
+function buildHappJsonConfig(client, lines, subscriptionName, routingEnabledForThisConfig = true) {
   const proxyOutbounds = lines
     .filter(line => String(line).startsWith('vless://'))
     .map((line, index) => parseVlessLineToOutbound(line, index));
@@ -2464,7 +2533,7 @@ function buildHappJsonConfig(client, lines, subscriptionName) {
       }
     },
     remarks: subscriptionName || DEFAULT_SUBSCRIPTION_NAME,
-    ...(getRoutingConfig().enabled !== false ? {
+    ...(routingEnabledForThisConfig && getRoutingConfig().enabled !== false ? {
       routing: {
         domainStrategy: 'IPIfNonMatch',
         rules: buildRoutingRules()
@@ -2498,7 +2567,8 @@ app.get('/json/:slug', async (req, res) => {
     return res.status(404).json({ error: 'Subscription not found' });
   }
 
-  const lines = await buildSubscriptionLines(client, true);
+  const entries = await buildSubscriptionEntries(client, true);
+  const lines = entries.map(e => e.line);
   const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
   const base64Title = Buffer.from(subscriptionName).toString('base64');
 
@@ -2520,7 +2590,8 @@ app.get('/json/:slug', async (req, res) => {
     // several configs/regions, while a single object is imported as only one
     // visible server. This was the reason only the last/random region appeared.
     if (!singleMode) {
-      return res.json(vlessLines.map((line, index) => buildHappJsonConfigFromLine(client, line, subscriptionName, index)));
+      const vlessEntries = entries.filter(e => String(e.line).startsWith('vless://'));
+      return res.json(vlessEntries.map((entry, index) => buildHappJsonConfigFromLine(client, entry.line, subscriptionName, index, isRoutingEnabledForNode(entry.nodeId))));
     }
 
     // Compatibility endpoint for clients that require a single Xray object:
@@ -2529,7 +2600,8 @@ app.get('/json/:slug', async (req, res) => {
     const selectedIndex = Number.isFinite(requestedNode)
       ? Math.min(Math.max(requestedNode - 1, 0), vlessLines.length - 1)
       : 0;
-    return res.json(buildHappJsonConfigFromLine(client, vlessLines[selectedIndex], subscriptionName, selectedIndex));
+    const selectedEntry = entries.filter(e => String(e.line).startsWith('vless://'))[selectedIndex];
+    return res.json(buildHappJsonConfigFromLine(client, selectedEntry.line, subscriptionName, selectedIndex, isRoutingEnabledForNode(selectedEntry.nodeId)));
   }
 
   return res.json({

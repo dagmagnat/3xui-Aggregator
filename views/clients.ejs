@@ -181,9 +181,9 @@
             <td>
               <% if (client.traffic_gb && client.traffic_gb > 0) { %><%= client.traffic_gb %> ГБ<% } else { %>∞<% } %>
               / <% if (client.duration_days && client.duration_days > 0) { %><%= client.duration_days %> дн.<% } else { %>∞<% } %>
-              <% if (client.node_limits && client.node_limits.some(nl => (nl.traffic_gb && nl.traffic_gb > 0) || nl.enabled === 0)) { %>
+              <% if (client.node_limits && client.node_limits.some(nl => nl.client_node_id && ((nl.traffic_gb && nl.traffic_gb > 0) || nl.enabled === 0))) { %>
                 <div class="node-limits">
-                  <% client.node_limits.filter(nl => (nl.traffic_gb && nl.traffic_gb > 0) || nl.enabled === 0).forEach(nl => { 
+                  <% client.node_limits.filter(nl => nl.client_node_id && ((nl.traffic_gb && nl.traffic_gb > 0) || nl.enabled === 0)).forEach(nl => { 
                     const suffix = (nl.label_suffix || '').trim();
                     const nodeTitle = suffix ? ((nl.country_name_ru || nl.name) + '/' + suffix) : (nl.country_name_ru || nl.name);
                   %>
@@ -267,8 +267,8 @@
             const nodeLabel = [row.country_flag, row.country_name_ru || row.country_code || row.name, row.label_suffix].filter(Boolean).join(' ');
           %>
             <label class="node-item node-edit-row">
-              <input class="inline" type="checkbox" name="node_enabled_<%= row.node_id %>" value="1" <%= row.enabled !== 0 ? 'checked' : '' %> />
-              <span class="node-info"><strong><%= nodeLabel %></strong><small><%= row.enabled !== 0 ? 'узел включён' : 'узел отключён для клиента' %></small></span>
+              <input class="inline" type="checkbox" name="node_enabled_<%= row.node_id %>" value="1" <%= row.client_node_id && row.enabled !== 0 ? 'checked' : '' %> />
+              <span class="node-info"><strong><%= nodeLabel %></strong><small><%= row.client_node_id ? (row.enabled !== 0 ? 'узел включён' : 'узел отключён для клиента') : 'узел не назначен' %></small></span>
               <input class="node-gb-input" name="node_traffic_gb_<%= row.node_id %>" type="number" min="0" step="1" value="<%= row.traffic_gb || '' %>" placeholder="ГБ" />
             </label>
           <% }) %>
