@@ -178,16 +178,22 @@
             <td><%= client.display_name %></td>
             <td><%= client.login %></td>
             <td class="comment-cell"><%= client.comment || "-" %></td>
-            <td>
-              <% if (client.traffic_gb && client.traffic_gb > 0) { %><%= client.traffic_gb %> ГБ<% } else { %>∞<% } %>
-              / <% if (client.duration_days && client.duration_days > 0) { %><%= client.duration_days %> дн.<% } else { %>∞<% } %>
+            <td class="limit-cell">
+              <div class="limit-summary">
+                <span class="limit-main"><% if (client.traffic_gb && client.traffic_gb > 0) { %><%= client.traffic_gb %> ГБ<% } else { %>∞<% } %></span>
+                <span class="limit-sep">/</span>
+                <span class="limit-main"><% if (client.duration_days && client.duration_days > 0) { %><%= client.duration_days %> дн.<% } else { %>∞<% } %></span>
+              </div>
               <% if (client.node_limits && client.node_limits.some(nl => nl.client_node_id && ((nl.traffic_gb && nl.traffic_gb > 0) || nl.enabled === 0))) { %>
-                <div class="node-limits">
+                <div class="node-limits" aria-label="Лимиты по узлам">
                   <% client.node_limits.filter(nl => nl.client_node_id && ((nl.traffic_gb && nl.traffic_gb > 0) || nl.enabled === 0)).forEach(nl => { 
                     const suffix = (nl.label_suffix || '').trim();
-                    const nodeTitle = suffix ? ((nl.country_name_ru || nl.name) + '/' + suffix) : (nl.country_name_ru || nl.name);
+                    const nodeTitle = suffix ? ((nl.country_name_ru || nl.name) + ' / ' + suffix) : (nl.country_name_ru || nl.name);
                   %>
-                    <span class="limit-chip"><%= nodeTitle %>: <%= nl.enabled === 0 ? 'отключён' : nl.traffic_gb + ' ГБ' %></span>
+                    <div class="node-limit-row <%= nl.enabled === 0 ? 'disabled' : '' %>">
+                      <span class="node-limit-name"><%= nodeTitle %></span>
+                      <span class="node-limit-value"><%= nl.enabled === 0 ? 'выкл.' : nl.traffic_gb + ' ГБ' %></span>
+                    </div>
                   <% }) %>
                 </div>
               <% } %>

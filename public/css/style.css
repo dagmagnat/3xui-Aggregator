@@ -1590,3 +1590,68 @@ input.inline[type="checkbox"] {
 @media (max-width: 900px) {
   .mode-grid { grid-template-columns: 1fr; }
 }
+
+
+/* Cleaner client traffic/term cell */
+.limit-cell {
+  min-width: 150px;
+  white-space: normal;
+}
+
+.limit-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-weight: 800;
+  color: #f3f8ff;
+}
+
+.limit-sep {
+  color: #7f98b8;
+  font-weight: 700;
+}
+
+.node-limits {
+  display: grid;
+  gap: 5px;
+  margin-top: 7px;
+  max-width: 210px;
+}
+
+.node-limit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 10px;
+  background: rgba(47, 123, 255, .12);
+  border: 1px solid rgba(93, 157, 255, .28);
+  color: #dcecff;
+  line-height: 1.15;
+}
+
+.node-limit-row.disabled {
+  background: rgba(255, 76, 112, .12);
+  border-color: rgba(255, 76, 112, .32);
+}
+
+.node-limit-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.node-limit-value {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .08);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
