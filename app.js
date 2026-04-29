@@ -244,6 +244,7 @@ function initDb() {
       remote_uuid TEXT NOT NULL,
       remote_sub_url TEXT DEFAULT '',
       traffic_gb INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(client_id, node_id)
     );
@@ -268,6 +269,7 @@ function initDb() {
   try { db.prepare(`ALTER TABLE clients ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`).run(); } catch (_) {}
   try { db.prepare(`ALTER TABLE clients ADD COLUMN comment TEXT NOT NULL DEFAULT ''`).run(); } catch (_) {}
   try { db.prepare(`ALTER TABLE client_nodes ADD COLUMN traffic_gb INTEGER NOT NULL DEFAULT 0`).run(); } catch (_) {}
+  try { db.prepare(`ALTER TABLE client_nodes ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`).run(); } catch (_) {}
 
   const existingAdmin = db.prepare('SELECT id FROM app_users WHERE username = ?').get(ADMIN_USERNAME);
   if (!existingAdmin) {
@@ -688,6 +690,7 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
       cn.remote_sub_url,
       cn.remote_uuid,
       cn.remote_email,
+      cn.enabled AS client_node_enabled,
       n.id AS node_id,
       n.name,
       n.panel_url,
@@ -696,7 +699,7 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
       n.username,
       n.password_enc,
       n.inbound_id,
-      n.enabled,
+      n.enabled AS node_enabled,
       n.last_status,
       n.last_error,
       n.country_code,
@@ -716,6 +719,7 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
       '' AS remote_sub_url,
       ? AS remote_uuid,
       ? AS remote_email,
+      1 AS client_node_enabled,
       n.id AS node_id,
       n.name,
       n.panel_url,
@@ -724,7 +728,7 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
       n.username,
       n.password_enc,
       n.inbound_id,
-      n.enabled,
+      n.enabled AS node_enabled,
       n.last_status,
       n.last_error,
       n.country_code,
@@ -742,7 +746,8 @@ async function buildSubscriptionLines(clientRow, includeOffline = true) {
 
   for (const row of rows) {
     try {
-      if (Number(row.enabled) !== 1) continue;
+      if (Number(row.node_enabled) !== 1) continue;
+      if (Number(row.client_node_enabled) !== 1) continue;
       if (!includeOffline && row.last_status === 'offline') continue;
 
       let inbound = getCachedInbound(row);
@@ -915,12 +920,12 @@ function upsertClientNodeMap(clientRow, node, rc, trafficGb) {
   const subUrl = buildNativeSubUrl(node, rc.subId || clientRow.sub_slug);
   const old = db.prepare('SELECT * FROM client_nodes WHERE client_id = ? AND node_id = ?').get(clientRow.id, node.id);
   if (!old) {
-    const info = db.prepare('INSERT INTO client_nodes (client_id,node_id,remote_email,remote_uuid,remote_sub_url,traffic_gb) VALUES (?,?,?,?,?,?)')
-      .run(clientRow.id, node.id, rc.email || clientRow.login, rc.uuid || clientRow.uuid, subUrl, trafficGb);
+    const info = db.prepare('INSERT INTO client_nodes (client_id,node_id,remote_email,remote_uuid,remote_sub_url,traffic_gb,enabled) VALUES (?,?,?,?,?,?,?)')
+      .run(clientRow.id, node.id, rc.email || clientRow.login, rc.uuid || clientRow.uuid, subUrl, trafficGb, rc.enable !== false ? 1 : 0);
     return { row: db.prepare('SELECT * FROM client_nodes WHERE id = ?').get(info.lastInsertRowid), created: true };
   }
-  db.prepare('UPDATE client_nodes SET remote_email = ?, remote_uuid = ?, remote_sub_url = ?, traffic_gb = ? WHERE id = ?')
-    .run(rc.email || clientRow.login, rc.uuid || clientRow.uuid, subUrl, trafficGb, old.id);
+  db.prepare('UPDATE client_nodes SET remote_email = ?, remote_uuid = ?, remote_sub_url = ?, traffic_gb = ?, enabled = ? WHERE id = ?')
+    .run(rc.email || clientRow.login, rc.uuid || clientRow.uuid, subUrl, trafficGb, rc.enable !== false ? 1 : 0, old.id);
   return { row: db.prepare('SELECT * FROM client_nodes WHERE id = ?').get(old.id), created: false };
 }
 
@@ -1044,6 +1049,9 @@ async function updateClientOnNode(node, map, client, opts = {}) {
   const email = String(opts.email || client.login || map.remote_email || current.email || '').trim();
   const subId = opts.subId || current.subId || client.sub_slug || randomUUID().replace(/-/g, '').slice(0, 16);
   const comment = String(opts.comment ?? client.comment ?? current.comment ?? '').trim();
+  const globalEnabled = opts.enabled !== undefined ? Boolean(opts.enabled) : (client.enabled !== 0);
+  const nodeEnabled = opts.node_enabled !== undefined ? Boolean(opts.node_enabled) : (map.enabled !== 0);
+  const effectiveEnabled = globalEnabled && nodeEnabled;
 
   const payload = {
     id: Number(node.inbound_id),
@@ -1055,7 +1063,7 @@ async function updateClientOnNode(node, map, client, opts = {}) {
         limitIp,
         totalGB: toTotalGbBytes(trafficGb),
         expiryTime,
-        enable: opts.enabled !== undefined ? Boolean(opts.enabled) : (client.enabled !== 0 && current.enable !== false),
+        enable: effectiveEnabled,
         tgId: current.tgId || '',
         subId,
         reset: durationDays > 0 && trafficGb > 0 ? durationDays : 0,
@@ -1065,7 +1073,7 @@ async function updateClientOnNode(node, map, client, opts = {}) {
   };
 
   await updateClient(node, map.remote_uuid, payload);
-  db.prepare('UPDATE client_nodes SET remote_email = ?, traffic_gb = ? WHERE id = ?').run(email, trafficGb, map.id);
+  db.prepare('UPDATE client_nodes SET remote_email = ?, traffic_gb = ?, enabled = ? WHERE id = ?').run(email, trafficGb, nodeEnabled ? 1 : 0, map.id);
 }
 
 async function updateClientEverywhere(client, opts = {}) {
@@ -1572,7 +1580,7 @@ app.get('/clients', requireAuth, (req, res) => {
 
   for (const client of clients) {
     client.node_limits = db.prepare(`
-      SELECT cn.traffic_gb, n.country_code, n.country_name_ru, n.name, n.label_suffix
+      SELECT cn.node_id, cn.traffic_gb, cn.enabled, n.country_code, n.country_name_ru, n.name, n.label_suffix
       FROM client_nodes cn
       JOIN nodes n ON n.id = cn.node_id
       WHERE cn.client_id = ?
@@ -1669,10 +1677,11 @@ app.post('/clients', requireAuth, async (req, res) => {
           remote_email,
           remote_uuid,
           remote_sub_url,
-          traffic_gb
+          traffic_gb,
+          enabled
         )
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(clientId, node.id, clientEmail, uuid, subUrl, nodeTrafficGb);
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(clientId, node.id, clientEmail, uuid, subUrl, nodeTrafficGb, 1);
     }
 
     res.redirect('/clients?message=' + encodeURIComponent('Клиент создан на выбранных узлах'));
@@ -1824,10 +1833,11 @@ app.post('/clients/:id/sync', requireAuth, async (req, res) => {
           remote_email,
           remote_uuid,
           remote_sub_url,
-          traffic_gb
+          traffic_gb,
+          enabled
         )
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(clientId, node.id, clientEmail, client.uuid, subUrl, 0);
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(clientId, node.id, clientEmail, client.uuid, subUrl, 0, 1);
     }
 
     res.redirect(`/clients/${clientId}`);
@@ -1917,6 +1927,7 @@ app.post('/clients/:id/edit', requireAuth, async (req, res) => {
     for (const map of mappings) {
       const raw = req.body[`node_traffic_gb_${map.node_id}`];
       const nodeTrafficGb = String(raw || '').trim() === '' ? trafficGb : Math.max(0, Number(raw || 0));
+      const nodeEnabled = req.body[`node_enabled_${map.node_id}`] === '1';
       try {
         const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(map.node_id);
         if (!node) continue;
@@ -1926,7 +1937,8 @@ app.post('/clients/:id/edit', requireAuth, async (req, res) => {
           duration_days: durationDays,
           traffic_gb: nodeTrafficGb,
           expiry_time: expiryTime,
-          comment
+          comment,
+          node_enabled: nodeEnabled
         });
       } catch (err) {
         console.error('Update client node failed:', err.message);

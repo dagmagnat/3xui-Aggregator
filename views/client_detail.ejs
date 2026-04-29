@@ -96,8 +96,8 @@
     <div class="checkbox-list node-list">
       <% mappings.forEach(row => { %>
         <label class="node-item node-edit-row">
-          <span></span>
-          <span class="node-info"><strong><%= nodeName(row) %></strong><small>inbound <%= row.inbound_id %></small></span>
+          <input class="inline" type="checkbox" name="node_enabled_<%= row.node_id %>" value="1" <%= row.enabled !== 0 ? 'checked' : '' %> />
+          <span class="node-info"><strong><%= nodeName(row) %></strong><small>inbound <%= row.inbound_id %> · <%= row.enabled !== 0 ? 'включён' : 'отключён для клиента' %></small></span>
           <input class="node-gb-input" name="node_traffic_gb_<%= row.node_id %>" type="number" min="0" step="1" value="<%= row.traffic_gb || '' %>" placeholder="ГБ" />
         </label>
       <% }) %>
