@@ -140,6 +140,7 @@ const LOGIN_LOCK_MINUTES = Number(process.env.LOGIN_LOCK_MINUTES || 15);
 if (TRUST_PROXY) app.set('trust proxy', 1);
 
 const FETCH_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS || 12000);
+const SUBSCRIPTION_STATS_TIMEOUT_MS = Number(process.env.SUBSCRIPTION_STATS_TIMEOUT_MS || 3500);
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
@@ -285,6 +286,18 @@ function initDb() {
   const existingAllowedIps = db.prepare('SELECT value FROM app_settings WHERE key = ?').get('admin_allowed_ips');
   if (!existingAllowedIps) {
     db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?)').run('admin_allowed_ips', '');
+  }
+
+  const defaultSettings = [
+    ['show_sub_links', '1'],
+    ['subscription_show_limits', '1'],
+    ['subscription_userinfo_header', '1'],
+    ['subscription_live_usage', '1']
+  ];
+
+  for (const [key, value] of defaultSettings) {
+    const existing = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key);
+    if (!existing) db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?)').run(key, value);
   }
 }
 
@@ -445,7 +458,7 @@ function safeParseJsonField(value, fallback = {}) {
   }
 }
 
-async function loginNode(node) {
+async function loginNode(node, timeoutMs = FETCH_TIMEOUT_MS) {
   const rootUrl = normalizeRootUrl(node.panel_url, node.panel_path);
   const password = decrypt(node.password_enc, APP_SECRET);
 
@@ -462,7 +475,7 @@ async function loginNode(node) {
     },
     body: body.toString(),
     redirect: 'manual'
-  });
+  }, timeoutMs);
 
   const cookie = extractCookieHeader(response);
   const data = await safeJson(response);
@@ -474,15 +487,15 @@ async function loginNode(node) {
   return { rootUrl, cookie };
 }
 
-async function apiGet(node, path) {
-  const { rootUrl, cookie } = await loginNode(node);
+async function apiGet(node, path, timeoutMs = FETCH_TIMEOUT_MS) {
+  const { rootUrl, cookie } = await loginNode(node, timeoutMs);
 
   const response = await fetchWithTimeout(`${rootUrl}${path}`, {
     headers: {
       'Accept': 'application/json',
       'Cookie': cookie
     }
-  });
+  }, timeoutMs);
 
   const data = await safeJson(response);
 
@@ -569,8 +582,8 @@ function saveInboundCache(node, inbound) {
   `).run(Number(node.id), Number(node.inbound_id), JSON.stringify(inbound));
 }
 
-async function getInbound(node) {
-  const data = await apiGet(node, `/panel/api/inbounds/get/${node.inbound_id}`);
+async function getInbound(node, timeoutMs = FETCH_TIMEOUT_MS) {
+  const data = await apiGet(node, `/panel/api/inbounds/get/${node.inbound_id}`, timeoutMs);
   const inbound = data.obj || data;
   saveInboundCache(node, inbound);
   return inbound;
@@ -690,7 +703,9 @@ async function buildSubscriptionEntries(clientRow, includeOffline = true) {
       cn.remote_sub_url,
       cn.remote_uuid,
       cn.remote_email,
+      cn.traffic_gb AS client_node_traffic_gb,
       cn.enabled AS client_node_enabled,
+      n.id AS id,
       n.id AS node_id,
       n.name,
       n.panel_url,
@@ -736,6 +751,11 @@ async function buildSubscriptionEntries(clientRow, includeOffline = true) {
         }
       }
 
+      const subscriptionInfo = await getSubscriptionNodeInfo(row, clientRow, inbound);
+      inbound = subscriptionInfo.inbound || inbound;
+
+      const baseNodeName = getNodePublicName(row);
+      const visibleNodeName = buildNodeLimitRemark(baseNodeName, subscriptionInfo);
       const stream = safeParseJsonField(inbound.streamSettings, {});
       let subUrl = '';
 
@@ -745,13 +765,19 @@ async function buildSubscriptionEntries(clientRow, includeOffline = true) {
           inbound,
           row.remote_uuid || clientRow.uuid,
           clientRow.display_name,
-          getNodePublicName(row)
+          visibleNodeName
         );
       }
 
       if (subUrl && !seen.has(subUrl)) {
         seen.add(subUrl);
-        entries.push({ line: subUrl, nodeId: row.node_id, nodeName: getNodePublicName(row) });
+        entries.push({
+          line: subUrl,
+          nodeId: row.node_id,
+          nodeName: visibleNodeName,
+          baseNodeName,
+          subscriptionInfo
+        });
       }
     } catch (err) {
       console.error('Build subscription line failed:', err.message);
@@ -885,6 +911,257 @@ function toTotalGbBytes(gb) {
 function fromTotalGbBytes(bytes) {
   const n = Math.max(0, Number(bytes || 0));
   return n > 0 ? Math.round(n / 1024 / 1024 / 1024) : 0;
+}
+
+
+function normalizeEpochMillis(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return n < 10000000000 ? Math.floor(n * 1000) : Math.floor(n);
+}
+
+function toEpochSeconds(value) {
+  const ms = normalizeEpochMillis(value);
+  return ms > 0 ? Math.floor(ms / 1000) : 0;
+}
+
+function clampByteNumber(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(n);
+}
+
+function numericField(obj, names, fallback = 0) {
+  if (!obj || typeof obj !== 'object') return fallback;
+
+  for (const name of names) {
+    if (!Object.prototype.hasOwnProperty.call(obj, name)) continue;
+    const value = obj[name];
+    if (value === null || value === undefined || value === '') continue;
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+
+  return fallback;
+}
+
+function normalizeObjectArray(value) {
+  const parsed = typeof value === 'string' ? safeParseJsonField(value, []) : value;
+  if (Array.isArray(parsed)) return parsed.filter(v => v && typeof v === 'object');
+  if (parsed && typeof parsed === 'object') return Object.values(parsed).filter(v => v && typeof v === 'object');
+  return [];
+}
+
+function sameText(a, b) {
+  return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+}
+
+function findClientStat(inbound, uuid, email) {
+  const stats = [
+    ...normalizeObjectArray(inbound?.clientStats),
+    ...normalizeObjectArray(inbound?.client_stats),
+    ...normalizeObjectArray(inbound?.stats),
+    ...normalizeObjectArray(inbound?.clientTraffics)
+  ];
+
+  const cleanUuid = String(uuid || '').trim();
+  const cleanEmail = String(email || '').trim();
+
+  return stats.find(s => cleanEmail && sameText(s.email, cleanEmail)) ||
+         stats.find(s => cleanUuid && (sameText(s.uuid, cleanUuid) || sameText(s.clientId, cleanUuid) || sameText(s.id, cleanUuid))) ||
+         null;
+}
+
+function extractTrafficInfoFromInbound(inbound, uuid, email) {
+  const settings = safeParseJsonField(inbound?.settings, {});
+  const clientCfg = findRemoteClient(settings, uuid, email) || {};
+  const stat = findClientStat(inbound, uuid, email) || {};
+
+  const uploadBytes = clampByteNumber(numericField(stat, ['up', 'upload', 'uplink', 'uploadBytes', 'uplinkBytes'], 0));
+  const downloadBytes = clampByteNumber(numericField(stat, ['down', 'download', 'downlink', 'downloadBytes', 'downlinkBytes'], 0));
+  const totalBytes = clampByteNumber(
+    numericField(stat, ['total', 'totalGB', 'trafficLimit', 'limit'], 0) ||
+    numericField(clientCfg, ['totalGB', 'total', 'trafficLimit', 'limit'], 0)
+  );
+  const expiryTimeMs = normalizeEpochMillis(
+    numericField(stat, ['expiryTime', 'expiry_time', 'expire', 'expireTime'], 0) ||
+    numericField(clientCfg, ['expiryTime', 'expiry_time', 'expire', 'expireTime'], 0)
+  );
+
+  const enabledValue = stat.enable ?? stat.enabled ?? clientCfg.enable ?? clientCfg.enabled;
+  const enabled = enabledValue === undefined ? true : !(enabledValue === false || Number(enabledValue) === 0);
+
+  return {
+    uploadBytes,
+    downloadBytes,
+    usedBytes: clampByteNumber(uploadBytes + downloadBytes),
+    totalBytes,
+    expiryTimeMs,
+    enabled
+  };
+}
+
+function getClientNodeLimitBytes(clientRow, row, remoteTotalBytes = 0) {
+  const nodeGb = Math.max(0, Number(row?.client_node_traffic_gb ?? row?.traffic_gb ?? 0));
+  const clientGb = Math.max(0, Number(clientRow?.traffic_gb || 0));
+
+  if (nodeGb > 0) return toTotalGbBytes(nodeGb);
+  if (clientGb > 0) return toTotalGbBytes(clientGb);
+  return clampByteNumber(remoteTotalBytes);
+}
+
+function getClientNodeExpiryMs(clientRow, remoteExpiryMs = 0) {
+  const remote = normalizeEpochMillis(remoteExpiryMs);
+  if (remote > 0) return remote;
+  return normalizeEpochMillis(clientRow?.expiry_time || 0);
+}
+
+function formatCompactNumber(value, digits = 1) {
+  const n = Math.max(0, Number(value || 0));
+  const maximumFractionDigits = n >= 10 ? 0 : digits;
+  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits }).format(n);
+}
+
+function formatTrafficShort(bytes) {
+  const n = clampByteNumber(bytes);
+  const gb = n / 1024 / 1024 / 1024;
+  if (gb >= 1) return `${formatCompactNumber(gb)} ГБ`;
+  const mb = n / 1024 / 1024;
+  return `${formatCompactNumber(mb, 0)} МБ`;
+}
+
+function formatTrafficPair(usedBytes, totalBytes) {
+  const usedGb = clampByteNumber(usedBytes) / 1024 / 1024 / 1024;
+  const totalGb = clampByteNumber(totalBytes) / 1024 / 1024 / 1024;
+  return `${formatCompactNumber(usedGb)}/${formatCompactNumber(totalGb)} ГБ`;
+}
+
+function getDaysLeftText(expiryTimeMs) {
+  const expiry = normalizeEpochMillis(expiryTimeMs);
+  if (!expiry) return 'без срока';
+
+  const diff = expiry - Date.now();
+  if (diff <= 0) return 'срок истёк';
+
+  const days = Math.ceil(diff / (24 * 60 * 60 * 1000));
+  return `${days} дн.`;
+}
+
+function shouldShowSubscriptionLimits() {
+  return getSetting('subscription_show_limits', '1') !== '0';
+}
+
+function shouldSendSubscriptionUserInfo() {
+  return getSetting('subscription_userinfo_header', '1') !== '0';
+}
+
+function shouldRefreshSubscriptionUsage() {
+  return getSetting('subscription_live_usage', '1') !== '0';
+}
+
+function buildNodeLimitRemark(baseName, info) {
+  if (!shouldShowSubscriptionLimits()) return baseName;
+
+  const parts = [];
+  const totalBytes = clampByteNumber(info?.totalBytes || 0);
+  const usedBytes = clampByteNumber(info?.usedBytes || 0);
+
+  if (totalBytes > 0) {
+    const remainingBytes = Math.max(0, totalBytes - usedBytes);
+    parts.push(formatTrafficPair(usedBytes, totalBytes));
+    parts.push(remainingBytes > 0 ? `ост. ${formatTrafficShort(remainingBytes)}` : 'лимит исчерпан');
+  } else {
+    parts.push('без лимита');
+  }
+
+  parts.push(getDaysLeftText(info?.expiryTimeMs || 0));
+
+  return `${baseName} · ${parts.join(' · ')}`;
+}
+
+async function getSubscriptionNodeInfo(row, clientRow, cachedInbound = null) {
+  let inbound = cachedInbound || null;
+  let source = inbound ? 'cache' : 'local';
+
+  if (shouldRefreshSubscriptionUsage() && String(row?.last_status || '') !== 'offline') {
+    try {
+      inbound = await getInbound(row, SUBSCRIPTION_STATS_TIMEOUT_MS);
+      source = 'live';
+    } catch (err) {
+      console.error(`Subscription usage refresh failed for node ${row?.node_id || row?.id || 'unknown'}:`, err.message);
+    }
+  }
+
+  if (!inbound) {
+    inbound = cachedInbound || getCachedInbound(row);
+    source = inbound ? 'cache' : 'local';
+  }
+
+  const remoteInfo = extractTrafficInfoFromInbound(
+    inbound,
+    row?.remote_uuid || clientRow?.uuid,
+    row?.remote_email || clientRow?.login
+  );
+
+  const totalBytes = getClientNodeLimitBytes(clientRow, row, remoteInfo.totalBytes);
+  const expiryTimeMs = getClientNodeExpiryMs(clientRow, remoteInfo.expiryTimeMs);
+  const uploadBytes = clampByteNumber(remoteInfo.uploadBytes);
+  const downloadBytes = clampByteNumber(remoteInfo.downloadBytes);
+
+  return {
+    inbound,
+    source,
+    uploadBytes,
+    downloadBytes,
+    usedBytes: clampByteNumber(uploadBytes + downloadBytes),
+    totalBytes,
+    expiryTimeMs,
+    enabled: remoteInfo.enabled !== false
+  };
+}
+
+function buildSubscriptionUserInfo(entries, clientRow) {
+  if (!shouldSendSubscriptionUserInfo()) return '';
+
+  let uploadBytes = 0;
+  let downloadBytes = 0;
+  let totalBytes = 0;
+  const expiries = [];
+
+  for (const entry of entries || []) {
+    const info = entry?.subscriptionInfo || {};
+    const entryTotal = clampByteNumber(info.totalBytes || 0);
+
+    if (entryTotal > 0) {
+      totalBytes += entryTotal;
+      uploadBytes += clampByteNumber(info.uploadBytes || 0);
+      downloadBytes += clampByteNumber(info.downloadBytes || 0);
+    }
+
+    const entryExpiry = normalizeEpochMillis(info.expiryTimeMs || 0);
+    if (entryExpiry > 0) expiries.push(entryExpiry);
+  }
+
+  if (totalBytes <= 0 && Number(clientRow?.traffic_gb || 0) > 0) {
+    totalBytes = toTotalGbBytes(clientRow.traffic_gb);
+  }
+
+  const clientExpiry = normalizeEpochMillis(clientRow?.expiry_time || 0);
+  if (clientExpiry > 0) expiries.push(clientExpiry);
+
+  const expireSeconds = expiries.length ? toEpochSeconds(Math.min(...expiries)) : 0;
+  const parts = [`upload=${clampByteNumber(uploadBytes)}`, `download=${clampByteNumber(downloadBytes)}`];
+
+  if (totalBytes > 0) parts.push(`total=${clampByteNumber(totalBytes)}`);
+  if (expireSeconds > 0) parts.push(`expire=${expireSeconds}`);
+
+  return parts.join('; ');
+}
+
+function setSubscriptionUserInfoHeaders(res, userInfoText) {
+  if (!userInfoText) return;
+  res.setHeader('Subscription-Userinfo', userInfoText);
+  res.setHeader('Profile-Update-Interval', '1');
 }
 
 
@@ -1236,6 +1513,9 @@ app.get('/settings', requireAuth, (req, res) => {
     adminUsername: currentUser?.username || '',
     adminAllowedIps: getSetting('admin_allowed_ips', ''),
     showSubLinks: getSetting('show_sub_links', '1') !== '0',
+    showSubscriptionLimits: getSetting('subscription_show_limits', '1') !== '0',
+    sendSubscriptionUserInfo: getSetting('subscription_userinfo_header', '1') !== '0',
+    refreshSubscriptionUsage: getSetting('subscription_live_usage', '1') !== '0',
     currentIp: getClientIp(req),
     message: req.query.message || '',
     error: req.query.error || ''
@@ -1277,14 +1557,19 @@ app.post('/settings', requireAuth, (req, res) => {
         updated_at = CURRENT_TIMESTAMP
     `).run('show_sub_links', req.body.show_sub_links === '1' ? '1' : '0');
 
+    setSetting('subscription_show_limits', req.body.subscription_show_limits === '1' ? '1' : '0');
+    setSetting('subscription_userinfo_header', req.body.subscription_userinfo_header === '1' ? '1' : '0');
+    setSetting('subscription_live_usage', req.body.subscription_live_usage === '1' ? '1' : '0');
+
     const currentPassword = String(req.body.current_password || '');
     const newUsername = String(req.body.admin_username || '').trim();
     const newPassword = String(req.body.new_password || '');
     const newPassword2 = String(req.body.new_password_confirm || '');
-    const wantsAccountChange = Boolean(newUsername || newPassword || currentPassword || newPassword2);
+    const user = db.prepare('SELECT * FROM app_users WHERE id = ?').get(req.session.userId);
+    const usernameChanged = Boolean(user && newUsername && newUsername !== user.username);
+    const wantsAccountChange = Boolean(usernameChanged || newPassword || currentPassword || newPassword2);
 
     if (wantsAccountChange) {
-      const user = db.prepare('SELECT * FROM app_users WHERE id = ?').get(req.session.userId);
       if (!user) throw new Error('Администратор не найден');
       if (!bcrypt.compareSync(currentPassword, user.password_hash)) {
         throw new Error('Текущий пароль указан неверно');
@@ -2075,8 +2360,10 @@ app.get('/sub/:slug', async (req, res) => {
   const entries = await buildSubscriptionEntries(client, true);
   const lines = entries.map(e => e.line);
   const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
+  const subscriptionUserInfo = buildSubscriptionUserInfo(entries, client);
 
   setSubscriptionNoCacheHeaders(res, subscriptionName, 'txt');
+  setSubscriptionUserInfoHeaders(res, subscriptionUserInfo);
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
 
   res.setHeader('profile-title', subscriptionName);
@@ -2103,6 +2390,7 @@ app.get('/sub/:slug', async (req, res) => {
     '#sniffing-enable: 1',
     '#subscriptions-collapse: 0',
     '#subscriptions-expand-now: 1',
+    ...(subscriptionUserInfo ? [`#subscription-userinfo: ${subscriptionUserInfo}`] : []),
     ...lines
   ].join('\n');
 
@@ -2570,12 +2858,15 @@ app.get('/json/:slug', async (req, res) => {
   const entries = await buildSubscriptionEntries(client, true);
   const lines = entries.map(e => e.line);
   const subscriptionName = getSetting('subscription_name', DEFAULT_SUBSCRIPTION_NAME);
+  const subscriptionUserInfo = buildSubscriptionUserInfo(entries, client);
   const base64Title = Buffer.from(subscriptionName).toString('base64');
 
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(subscriptionName + '.json')}`);
   res.setHeader('Profile-Title', `base64:${base64Title}`);
   res.setHeader('Subscription-Title', `base64:${base64Title}`);
+  setSubscriptionUserInfoHeaders(res, subscriptionUserInfo);
+  res.setHeader('profile-update-interval', '1');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');

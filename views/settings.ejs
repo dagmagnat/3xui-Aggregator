@@ -21,6 +21,27 @@
         </div>
 
         <div class="field">
+          <label class="switch-row compact">
+            <input type="checkbox" name="subscription_show_limits" value="1" <%= showSubscriptionLimits ? 'checked' : '' %> />
+            <span><strong>Показывать лимит и срок в названиях узлов</strong><small>В Happ/других клиентах регион будет называться примерно так: Россия · 7/10 ГБ · ост. 3 ГБ · 15 дн.</small></span>
+          </label>
+        </div>
+
+        <div class="field">
+          <label class="switch-row compact">
+            <input type="checkbox" name="subscription_userinfo_header" value="1" <%= sendSubscriptionUserInfo ? 'checked' : '' %> />
+            <span><strong>Отдавать полосу трафика и срок через заголовок Subscription-Userinfo</strong><small>Клиенты, которые поддерживают этот заголовок, показывают общую шкалу использованного трафика и дату окончания подписки.</small></span>
+          </label>
+        </div>
+
+        <div class="field">
+          <label class="switch-row compact">
+            <input type="checkbox" name="subscription_live_usage" value="1" <%= refreshSubscriptionUsage ? 'checked' : '' %> />
+            <span><strong>Обновлять расход трафика при каждом обновлении подписки</strong><small>Агрегатор будет коротко опрашивать 3x-ui узлы. Если узел недоступен, останется последняя кэшированная информация.</small></span>
+          </label>
+        </div>
+
+        <div class="field">
           <h3 style="margin:10px 0 0;">Доступ к админке</h3>
           <small class="hint">Для смены логина или пароля обязательно укажи текущий пароль.</small>
         </div>
