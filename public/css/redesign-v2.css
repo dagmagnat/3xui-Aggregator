@@ -1,0 +1,144 @@
+/* Nexus Panel v2: structural UI layer. Keeps routes, IDs and JS hooks unchanged. */
+:root {
+  --v2-bg: #f4f7fa;
+  --v2-surface: #ffffff;
+  --v2-surface-soft: #f7fafc;
+  --v2-ink: #14283c;
+  --v2-muted: #6d8093;
+  --v2-line: #dce5ec;
+  --v2-accent: #0f9da9;
+  --v2-accent-soft: #e5f6f5;
+  --v2-good: #168b70;
+  --v2-warn: #bd7b18;
+  --v2-bad: #c65368;
+  --v2-radius: 10px;
+  --v2-shadow: 0 8px 24px rgba(20, 40, 60, .07);
+}
+
+html[data-color-mode="light"] body.redesign-stage52,
+body.redesign-stage52 {
+  background: var(--v2-bg) !important;
+  color: var(--v2-ink) !important;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+}
+
+body.redesign-stage52 .layout { grid-template-columns: 252px minmax(0, 1fr) !important; gap: 0 !important; }
+body.redesign-stage52 .sidebar {
+  position: sticky !important; top: 0 !important; height: 100vh !important; box-sizing: border-box !important;
+  margin: 0 !important; padding: 28px 20px 18px !important; border: 0 !important; border-right: 1px solid #20364a !important;
+  border-radius: 0 !important; background: #0b1624 !important; box-shadow: none !important;
+}
+body.redesign-stage52 .brand { padding: 0 10px 25px !important; margin: 0 0 22px !important; border-color: #20364a !important; }
+body.redesign-stage52 .brand-shield { width: 42px !important; height: 42px !important; border-radius: 11px !important; background: var(--v2-accent) !important; color: #06202a !important; border: 0 !important; }
+body.redesign-stage52 .brand-text strong { font-size: 17px !important; letter-spacing: .08em !important; }
+body.redesign-stage52 .brand-text small { color: #7f94aa !important; letter-spacing: .12em !important; font-size: 9px !important; }
+body.redesign-stage52 .side-nav { gap: 5px !important; }
+body.redesign-stage52 .side-nav a { min-height: 44px !important; padding: 10px 13px !important; border-radius: 7px !important; color: #9db0c3 !important; font-weight: 650 !important; }
+body.redesign-stage52 .side-nav a:hover { background: #142b3b !important; color: #fff !important; }
+body.redesign-stage52 .side-nav a.active { background: #153442 !important; color: #fff !important; box-shadow: inset 3px 0 var(--v2-accent) !important; }
+body.redesign-stage52 .side-nav a.active .nav-icon { color: var(--v2-accent) !important; }
+body.redesign-stage52 .sidebar-order-button { margin-top: 18px !important; border-color: #29465a !important; color: #b7c8d5 !important; background: #102333 !important; }
+body.redesign-stage52 .sidebar-user-card { margin-top: auto !important; background: #102333 !important; border-color: #29465a !important; border-radius: 8px !important; }
+
+body.redesign-stage52 .main { min-width: 0 !important; padding: 38px clamp(22px, 4vw, 58px) 56px !important; }
+body.redesign-stage52 .topbar { margin: 0 0 28px !important; padding-bottom: 22px !important; border-bottom: 1px solid var(--v2-line) !important; }
+body.redesign-stage52 .page-intro h1, body.redesign-stage52 .main h1 { color: var(--v2-ink) !important; font-size: clamp(26px, 2.4vw, 36px) !important; line-height: 1.15 !important; font-weight: 760 !important; }
+body.redesign-stage52 .subtitle, body.redesign-stage52 .muted, body.redesign-stage52 .hint, body.redesign-stage52 small { color: var(--v2-muted) !important; }
+body.redesign-stage52 .grid { gap: 16px !important; }
+body.redesign-stage52 .card, body.redesign-stage52 .stats-card, body.redesign-stage52 .table-wrap, body.redesign-stage52 .nodes-list-panel, body.redesign-stage52 .nodes-detail-panel, body.redesign-stage52 .settings-panel {
+  background: var(--v2-surface) !important; border: 1px solid var(--v2-line) !important; border-radius: var(--v2-radius) !important; box-shadow: var(--v2-shadow) !important;
+}
+body.redesign-stage52 .card { padding: 22px !important; }
+body.redesign-stage52 .stats-card { padding: 20px 22px !important; min-height: 118px !important; }
+body.redesign-stage52 .stats-label { color: var(--v2-muted) !important; font-size: 11px !important; text-transform: uppercase !important; letter-spacing: .08em !important; }
+body.redesign-stage52 .stats-number { color: var(--v2-ink) !important; font-size: 34px !important; font-weight: 760 !important; }
+body.redesign-stage52 .desktop-page-tabs { border-bottom: 1px solid var(--v2-line) !important; gap: 4px !important; margin-bottom: 18px !important; }
+body.redesign-stage52 .desktop-page-tabs button { min-height: 42px !important; border-radius: 7px 7px 0 0 !important; color: var(--v2-muted) !important; }
+body.redesign-stage52 .desktop-page-tabs button.is-active { color: var(--v2-accent) !important; border-bottom-color: var(--v2-accent) !important; background: var(--v2-accent-soft) !important; }
+body.redesign-stage52 input:not([type="checkbox"]):not([type="radio"]), body.redesign-stage52 select, body.redesign-stage52 textarea { min-height: 42px !important; box-sizing: border-box !important; border: 1px solid var(--v2-line) !important; border-radius: 7px !important; background: #fbfcfd !important; color: var(--v2-ink) !important; }
+body.redesign-stage52 input:focus, body.redesign-stage52 select:focus, body.redesign-stage52 textarea:focus { border-color: var(--v2-accent) !important; box-shadow: 0 0 0 3px rgba(15,157,169,.14) !important; }
+body.redesign-stage52 button, body.redesign-stage52 .btn-main, body.redesign-stage52 .btn-secondary, body.redesign-stage52 .link-btn { min-height: 40px !important; border-radius: 7px !important; font-weight: 700 !important; }
+body.redesign-stage52 .btn-main { background: var(--v2-accent) !important; border-color: var(--v2-accent) !important; color: #fff !important; }
+body.redesign-stage52 .btn-secondary, body.redesign-stage52 .link-btn.secondary { background: #f0f4f7 !important; border-color: var(--v2-line) !important; color: #42576b !important; }
+body.redesign-stage52 table { border-collapse: separate !important; border-spacing: 0 !important; }
+body.redesign-stage52 th { background: #f7fafc !important; color: var(--v2-muted) !important; border-bottom: 1px solid var(--v2-line) !important; font-size: 11px !important; text-transform: uppercase !important; letter-spacing: .05em !important; }
+body.redesign-stage52 td, body.redesign-stage52 th { padding: 13px 14px !important; border-color: var(--v2-line) !important; }
+body.redesign-stage52 tbody tr:hover td { background: #f7fbfb !important; }
+body.redesign-stage52 .badge.online, body.redesign-stage52 .badge.active, body.redesign-stage52 .mobile-status-pill.online { color: var(--v2-good) !important; background: #e3f5ef !important; border-color: #c8ebdf !important; }
+body.redesign-stage52 .badge.warning, body.redesign-stage52 .mobile-status-pill.warning { color: var(--v2-warn) !important; background: #fff1d8 !important; border-color: #f6dfb3 !important; }
+body.redesign-stage52 .badge.offline, body.redesign-stage52 .badge.expired, body.redesign-stage52 .mobile-status-pill.offline, body.redesign-stage52 .mobile-status-pill.expired { color: var(--v2-bad) !important; background: #fbe6e9 !important; border-color: #f4cbd1 !important; }
+
+/* Clients: make the existing data views read as one operations workspace. */
+body.redesign-stage52 .clients-card { padding: 0 !important; overflow: hidden !important; }
+body.redesign-stage52 .clients-card > * { margin-left: 22px !important; margin-right: 22px !important; }
+body.redesign-stage52 .client-overview-strip { padding: 20px 0 !important; border-bottom: 1px solid var(--v2-line) !important; }
+body.redesign-stage52 .client-overview-stat { background: transparent !important; border-right: 1px solid var(--v2-line) !important; border-radius: 0 !important; }
+body.redesign-stage52 .client-overview-stat strong { color: var(--v2-ink) !important; font-size: 25px !important; }
+body.redesign-stage52 .client-protocol-tabs { background: #f2f6f8 !important; border: 1px solid var(--v2-line) !important; border-radius: 8px !important; padding: 4px !important; gap: 3px !important; }
+body.redesign-stage52 .client-protocol-tabs a { border-radius: 6px !important; color: var(--v2-muted) !important; }
+body.redesign-stage52 .client-protocol-tabs a.is-active { color: var(--v2-ink) !important; background: #fff !important; box-shadow: 0 2px 7px rgba(20,40,60,.08) !important; }
+body.redesign-stage52 .clients-modern-table-wrap { border: 0 !important; box-shadow: none !important; }
+body.redesign-stage52 .mobile-client-search-card { margin-bottom: 14px !important; padding: 14px !important; }
+
+/* Existing mobile cards become the primary phone UI. */
+body.redesign-stage52 .mobile-client-card { border: 1px solid var(--v2-line) !important; border-radius: 10px !important; background: #fff !important; box-shadow: var(--v2-shadow) !important; padding: 16px !important; }
+body.redesign-stage52 .mobile-client-card + .mobile-client-card { margin-top: 10px !important; }
+body.redesign-stage52 .mobile-client-name { color: var(--v2-ink) !important; font-size: 16px !important; font-weight: 760 !important; }
+body.redesign-stage52 .mobile-client-comment, body.redesign-stage52 .mobile-client-expiry, body.redesign-stage52 .mobile-client-metrics span { color: var(--v2-muted) !important; }
+body.redesign-stage52 .mobile-client-actions { border-top: 1px solid var(--v2-line) !important; padding-top: 12px !important; gap: 7px !important; }
+body.redesign-stage52 .mobile-client-actions .icon-action { min-height: 38px !important; border-radius: 7px !important; background: #f0f4f7 !important; color: #42576b !important; }
+
+body.redesign-stage52 .modal { background: rgba(8, 22, 36, .58) !important; backdrop-filter: blur(4px) !important; }
+body.redesign-stage52 .modal-card { border: 1px solid var(--v2-line) !important; border-radius: 12px !important; background: #fff !important; box-shadow: 0 22px 70px rgba(8,22,36,.22) !important; }
+
+@media (max-width: 900px) {
+  body.redesign-stage52 .layout { display: block !important; }
+  body.redesign-stage52 .sidebar { position: fixed !important; z-index: 40 !important; width: min(310px, 86vw) !important; transform: translateX(-105%) !important; transition: transform .2s ease !important; box-shadow: 12px 0 32px rgba(0,0,0,.22) !important; }
+  body.redesign-stage52.mobile-menu-open .sidebar { transform: translateX(0) !important; }
+  body.redesign-stage52 .main { padding: 16px 14px calc(104px + env(safe-area-inset-bottom, 0px)) !important; }
+  body.redesign-stage52 .mobile-shellbar { position: sticky !important; top: 0 !important; z-index: 30 !important; display: grid !important; grid-template-columns: 42px 1fr 42px !important; align-items: center !important; gap: 8px !important; min-height: 62px !important; padding: 8px 14px !important; background: rgba(255,255,255,.94) !important; border-bottom: 1px solid var(--v2-line) !important; backdrop-filter: blur(14px) !important; }
+  body.redesign-stage52 .mobile-shell-title strong { color: var(--v2-ink) !important; font-size: 18px !important; }
+  body.redesign-stage52 .mobile-shell-title span { color: var(--v2-muted) !important; font-size: 11px !important; }
+  body.redesign-stage52 .mobile-menu-toggle, body.redesign-stage52 .theme-toggle-mobile { width: 40px !important; height: 40px !important; min-height: 40px !important; border-radius: 8px !important; background: #f0f4f7 !important; color: var(--v2-ink) !important; }
+  body.redesign-stage52 .topbar { display: none !important; }
+  body.redesign-stage52 .card { padding: 16px !important; border-radius: 10px !important; }
+  body.redesign-stage52 .stats-card { min-height: 90px !important; padding: 15px !important; }
+  body.redesign-stage52 .stats-number { font-size: 27px !important; }
+  body.redesign-stage52 .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  body.redesign-stage52 .span-3 { grid-column: span 1 !important; }
+  body.redesign-stage52 .span-12 { grid-column: 1 / -1 !important; }
+  body.redesign-stage52 .desktop-page-tabs { display: none !important; }
+  body.redesign-stage52 .mobile-bottom-nav { left: 10px !important; right: 10px !important; bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !important; z-index: 35 !important; display: grid !important; grid-template-columns: repeat(5, 1fr) !important; border: 1px solid #29465a !important; border-radius: 14px !important; background: #0b1624 !important; box-shadow: 0 10px 28px rgba(8,22,36,.25) !important; padding: 6px !important; }
+  body.redesign-stage52 .mobile-bottom-nav a { min-height: 52px !important; border-radius: 9px !important; color: #9db0c3 !important; }
+  body.redesign-stage52 .mobile-bottom-nav a.active { color: #38c7cf !important; background: #153442 !important; }
+  body.redesign-stage52 .mobile-bottom-nav em { font-size: 10px !important; font-style: normal !important; }
+  body.redesign-stage52 .clients-modern-table-wrap, body.redesign-stage52 .desktop-client-split-list { display: none !important; }
+  body.redesign-stage52 .mobile-client-cards { display: block !important; }
+  body.redesign-stage52 .clients-card > * { margin-left: 14px !important; margin-right: 14px !important; }
+  body.redesign-stage52 .client-overview-strip { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 0 !important; overflow: hidden !important; }
+  body.redesign-stage52 .client-overview-stat { min-width: 0 !important; padding: 8px 5px !important; }
+  body.redesign-stage52 .client-overview-stat:nth-child(n+4) { display: none !important; }
+  body.redesign-stage52 .client-overview-stat span { font-size: 10px !important; white-space: normal !important; }
+  body.redesign-stage52 .client-overview-stat strong { font-size: 21px !important; }
+  body.redesign-stage52 .client-protocol-tabs { overflow-x: auto !important; white-space: nowrap !important; }
+  body.redesign-stage52 .client-protocol-tabs a { flex: 0 0 auto !important; font-size: 12px !important; }
+  body.redesign-stage52 .mobile-client-actions { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  body.redesign-stage52 .mobile-client-actions .icon-action { width: 100% !important; }
+  body.redesign-stage52 .table-wrap { overflow-x: auto !important; }
+  body.redesign-stage52 .modal-card { width: min(100% - 24px, 560px) !important; max-height: calc(100vh - 32px) !important; overflow: auto !important; }
+}
+
+@media (max-width: 420px) {
+  body.redesign-stage52 .main { padding-left: 10px !important; padding-right: 10px !important; }
+  body.redesign-stage52 .mobile-bottom-nav { left: 6px !important; right: 6px !important; }
+  body.redesign-stage52 .mobile-bottom-nav em { font-size: 9px !important; }
+  body.redesign-stage52 .mobile-client-card { padding: 13px !important; }
+  body.redesign-stage52 .mobile-client-actions { grid-template-columns: 1fr 1fr !important; }
+}
+
+html[data-color-mode="dark"] body.redesign-stage52 { --v2-bg: #0b1420; --v2-surface: #111f2f; --v2-surface-soft: #142538; --v2-ink: #f3f7fb; --v2-muted: #8ea2b6; --v2-line: #263d54; --v2-accent-soft: #153842; --v2-shadow: 0 8px 24px rgba(0,0,0,.2); }
+html[data-color-mode="dark"] body.redesign-stage52 .mobile-shellbar { background: rgba(11,20,32,.94) !important; }
+html[data-color-mode="dark"] body.redesign-stage52 input:not([type="checkbox"]):not([type="radio"]), html[data-color-mode="dark"] body.redesign-stage52 select, html[data-color-mode="dark"] body.redesign-stage52 textarea { background: #0d1a29 !important; color: var(--v2-ink) !important; }
+html[data-color-mode="dark"] body.redesign-stage52 th, html[data-color-mode="dark"] body.redesign-stage52 .btn-secondary, html[data-color-mode="dark"] body.redesign-stage52 .link-btn.secondary, html[data-color-mode="dark"] body.redesign-stage52 .mobile-client-actions .icon-action { background: #142538 !important; color: #c0cfdb !important; }

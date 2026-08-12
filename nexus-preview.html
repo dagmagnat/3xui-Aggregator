@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="ru" data-color-mode="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus Panel — UI Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* Nexus UI CSS (сокращённая версия для превью) */
+    html[data-color-mode="dark"] {
+      --nx-bg: #0f1419;
+      --nx-bg-elevated: #1a1f2e;
+      --nx-surface: #1a1f2e;
+      --nx-surface-hover: #242938;
+      --nx-surface-active: #2d3348;
+      --nx-border: #2d3348;
+      --nx-border-strong: #3d4458;
+      --nx-text: #e5e7eb;
+      --nx-text-secondary: #9ca3af;
+      --nx-text-muted: #6b7280;
+      --nx-accent: #9ca3af;
+      --nx-accent-hover: #d1d5db;
+      --nx-accent-soft: rgba(156, 163, 175, 0.1);
+      --nx-success: #34d399;
+      --nx-success-bg: rgba(52, 211, 153, 0.15);
+      --nx-warning: #fbbf24;
+      --nx-warning-bg: rgba(251, 191, 36, 0.15);
+      --nx-danger: #f87171;
+      --nx-danger-bg: rgba(248, 113, 113, 0.15);
+      --nx-info: #60a5fa;
+      --nx-info-bg: rgba(96, 165, 250, 0.15);
+      --nx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+      --nx-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+      --nx-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+      --nx-radius: 12px;
+      --nx-radius-sm: 8px;
+      --nx-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color-scheme: dark;
+    }
+
+    html[data-color-mode="light"] {
+      --nx-bg: #f5f6f7;
+      --nx-surface: #ffffff;
+      --nx-surface-hover: #f8f9fa;
+      --nx-surface-active: #f0f1f3;
+      --nx-border: #e5e7eb;
+      --nx-border-strong: #d1d5db;
+      --nx-text: #1f2937;
+      --nx-text-secondary: #6b7280;
+      --nx-text-muted: #9ca3af;
+      --nx-accent: #6b7280;
+      --nx-accent-hover: #4b5563;
+      --nx-accent-soft: rgba(107, 114, 128, 0.1);
+      --nx-success: #10b981;
+      --nx-success-bg: rgba(16, 185, 129, 0.1);
+      --nx-warning: #f59e0b;
+      --nx-warning-bg: rgba(245, 158, 11, 0.1);
+      --nx-danger: #ef4444;
+      --nx-danger-bg: rgba(239, 68, 68, 0.1);
+      --nx-info: #3b82f6;
+      --nx-info-bg: rgba(59, 130, 246, 0.1);
+      --nx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+      color-scheme: light;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: var(--nx-font); background: var(--nx-bg); color: var(--nx-text); min-height: 100vh; }
+    
+    .layout { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+    
+    .sidebar { background: var(--nx-surface); border-right: 1px solid var(--nx-border); padding: 0; display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+    
+    .brand { display: flex; align-items: center; gap: 14px; padding: 20px; border-bottom: 1px solid var(--nx-border); }
+    .brand-shield { width: 42px; height: 42px; border-radius: 12px; background: var(--nx-accent-soft); display: flex; align-items: center; justify-content: center; color: var(--nx-accent); flex-shrink: 0; }
+    .brand-shield svg { width: 22px; height: 22px; }
+    .brand-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+    .brand-text strong { font-size: 17px; font-weight: 700; color: var(--nx-text); }
+    .brand-text small { font-size: 11px; color: var(--nx-text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.05em; }
+    
+    .side-nav { display: flex; flex-direction: column; gap: 4px; padding: 16px 12px; flex: 1; }
+    .side-nav-group-title { padding: 12px 12px 6px; font-size: 11px; font-weight: 700; color: var(--nx-text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .side-nav a { display: flex; align-items: center; gap: 14px; padding: 12px 14px; min-height: 46px; border-radius: var(--nx-radius-sm); color: var(--nx-text-secondary); font-size: 15px; font-weight: 550; text-decoration: none; transition: all 0.15s; position: relative; }
+    .side-nav a:hover { background: var(--nx-surface-hover); color: var(--nx-text); }
+    .side-nav a.active { background: var(--nx-accent-soft); color: var(--nx-text); font-weight: 650; }
+    .side-nav a.active::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; background: var(--nx-accent); border-radius: 2px; }
+    .nav-icon { width: 22px; height: 22px; flex-shrink: 0; color: var(--nx-text-muted); }
+    .side-nav a.active .nav-icon { color: var(--nx-accent); }
+    
+    .sidebar-user-card { display: flex; align-items: center; gap: 12px; padding: 14px 16px; margin: 12px; background: var(--nx-surface-hover); border: 1px solid var(--nx-border); border-radius: var(--nx-radius-sm); }
+    .sidebar-user-avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--nx-accent-soft); color: var(--nx-accent); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; flex-shrink: 0; }
+    .sidebar-user-meta { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+    .sidebar-user-meta strong { font-size: 15px; font-weight: 650; color: var(--nx-text); }
+    .sidebar-user-meta small { font-size: 12px; color: var(--nx-text-muted); margin-top: 2px; }
+    
+    .sidebar-logout { padding: 12px; margin-top: auto; }
+    .sidebar-logout button { width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 12px; min-height: 44px; background: transparent; border: 1px solid var(--nx-border); border-radius: var(--nx-radius-sm); color: var(--nx-text-muted); font-size: 14.5px; font-weight: 600; cursor: pointer; font-family: var(--nx-font); transition: all 0.15s; }
+    .sidebar-logout button:hover { background: var(--nx-danger-bg); border-color: var(--nx-danger); color: var(--nx-danger); }
+    
+    .main { padding: 28px 32px; max-width: 1440px; width: 100%; }
+    .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 28px; }
+    .topbar h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
+    .subtitle { color: var(--nx-text-muted); font-size: 14px; }
+    
+    .theme-toggle-btn { position: fixed; top: 20px; right: 20px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: var(--nx-surface); border: 1px solid var(--nx-border); border-radius: var(--nx-radius-sm); color: var(--nx-text); cursor: pointer; z-index: 100; font-size: 20px; }
+    
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; margin-bottom: 24px; }
+    .stats-card { background: var(--nx-surface); border: 1px solid var(--nx-border); border-radius: 12px; padding: 22px 24px; display: flex; align-items: center; gap: 18px; }
+    .stats-icon { width: 52px; height: 52px; border-radius: 12px; background: var(--nx-accent-soft); color: var(--nx-accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .stats-icon svg { width: 26px; height: 26px; }
+    .stats-content { flex: 1; min-width: 0; }
+    .stats-value { font-size: 26px; font-weight: 700; line-height: 1.2; color: var(--nx-text); }
+    .stats-label { font-size: 12px; color: var(--nx-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 3px; }
+    .stats-trend { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 8px; }
+    .stats-trend.up { color: var(--nx-success); background: var(--nx-success-bg); }
+    .stats-trend.down { color: var(--nx-danger); background: var(--nx-danger-bg); }
+    
+    .card { background: var(--nx-surface); border: 1px solid var(--nx-border); border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+    .card h2 { font-size: 20px; font-weight: 700; margin-bottom: 16px; }
+    
+    .table-wrap { overflow-x: auto; }
+    .table-wrap table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+    .table-wrap th { text-align: left; padding: 14px 18px; font-size: 11px; font-weight: 700; color: var(--nx-text-muted); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--nx-border); background: var(--nx-surface-hover); white-space: nowrap; }
+    .table-wrap td { padding: 14px 18px; border-bottom: 1px solid var(--nx-border); color: var(--nx-text-secondary); vertical-align: middle; }
+    .table-wrap tr:hover td { background: var(--nx-surface-hover); }
+    
+    .badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; font-size: 12.5px; font-weight: 600; border-radius: 8px; }
+    .badge.success { background: var(--nx-success-bg); color: var(--nx-success); }
+    .badge.warning { background: var(--nx-warning-bg); color: var(--nx-warning); }
+    .badge.danger { background: var(--nx-danger-bg); color: var(--nx-danger); }
+    .badge.neutral { background: var(--nx-accent-soft); color: var(--nx-text-secondary); }
+    
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .status-dot.online { background: var(--nx-success); box-shadow: 0 0 0 3px var(--nx-success-bg); }
+    .status-dot.offline { background: var(--nx-text-muted); }
+    
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; min-height: 42px; font-size: 14.5px; font-weight: 600; border-radius: var(--nx-radius-sm); border: 1px solid transparent; cursor: pointer; font-family: var(--nx-font); text-decoration: none; transition: all 0.15s; }
+    .btn-primary { background: var(--nx-accent); color: #fff; border-color: var(--nx-accent); }
+    .btn-primary:hover { background: var(--nx-accent-hover); color: #fff; }
+    .btn-secondary { background: transparent; color: var(--nx-text-secondary); border-color: var(--nx-border); }
+    .btn-secondary:hover { background: var(--nx-surface-hover); color: var(--nx-text); }
+    
+    input[type="text"], input[type="email"], input[type="password"] { width: 100%; padding: 10px 14px; min-height: 42px; font-size: 15px; font-family: var(--nx-font); color: var(--nx-text); background: var(--nx-bg); border: 1px solid var(--nx-border); border-radius: var(--nx-radius-sm); outline: none; transition: all 0.15s; }
+    input:focus { border-color: var(--nx-accent); box-shadow: 0 0 0 3px var(--nx-accent-soft); }
+    label { display: block; font-size: 13.5px; font-weight: 600; color: var(--nx-text-secondary); margin-bottom: 6px; }
+    
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .main { padding: 18px 16px; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+      .stats-card { padding: 16px 18px; }
+      .stats-icon { width: 44px; height: 44px; }
+      .stats-value { font-size: 22px; }
+      .card { padding: 18px 16px; }
+    }
+  </style>
+</head>
+<body>
+  <button class="theme-toggle-btn" onclick="toggleTheme()">🌓</button>
+  
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-shield">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.6 20 5.7v6c0 5.2-3.4 8.8-8 11-4.6-2.2-8-5.8-8-11v-6L12 2.6z"/><path d="m8.8 11.8 2.3 2.3 4.3-4.6"/></svg>
+        </div>
+        <div class="brand-text">
+          <strong>Nexus Panel</strong>
+          <small>Network control center</small>
+        </div>
+      </div>
+
+      <div class="side-nav">
+        <div class="side-nav-group-title">Операции</div>
+        <a href="#" class="active">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.2" height="7.2" rx="1.6"/><rect x="13.8" y="3" width="7.2" height="7.2" rx="1.6"/><rect x="3" y="13.8" width="7.2" height="7.2" rx="1.6"/><rect x="13.8" y="13.8" width="7.2" height="7.2" rx="1.6"/></svg>
+          <span>Дашборд</span>
+        </a>
+        <a href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6.6" rx="2"/><rect x="3" y="13.4" width="18" height="6.6" rx="2"/></svg>
+          <span>Узлы</span>
+        </a>
+        <a href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.8" r="3.3"/><path d="M3.4 20c.6-3.3 2.9-5.1 5.6-5.1s5 1.8 5.6 5.1"/></svg>
+          <span>Клиенты</span>
+        </a>
+        <a href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 2.7v5.4c0 4.7-3 7.9-7 9.9-4-2-7-5.2-7-9.9V5.7L12 3z"/></svg>
+          <span>VPN-сервисы</span>
+        </a>
+
+        <div class="side-nav-group-title">Конфигурация</div>
+        <a href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="6" r="2.6"/><path d="M8.2 15.8 15.8 8.2"/></svg>
+          <span>Маршрутизация</span>
+        </a>
+        <a href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8H5"/><path d="M8 5 5 8l3 3"/></svg>
+          <span>Перенаправление</span>
+        </a>
+        <a href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5 6L14 6l2.5 6H21"/></svg>
+          <span>Диагностика</span>
+        </a>
+
+        <div class="side-nav-group-title">Система</div>
+        <a href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3 10.4 13.6"/><path d="M21 3 14 21l-3.6-7.4L3 10z"/></svg>
+          <span>TG-бот</span>
+        </a>
+        <a href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-7.6M7.6 7H4"/><circle cx="10" cy="7" r="2.4"/><path d="M20 17h-3.6M11.6 17H4"/><circle cx="14" cy="17" r="2.4"/></svg>
+          <span>Настройки</span>
+        </a>
+      </div>
+
+      <div class="sidebar-user-card">
+        <div class="sidebar-user-avatar">AD</div>
+        <div class="sidebar-user-meta">
+          <strong>admin</strong>
+          <small>Администратор</small>
+        </div>
+      </div>
+
+      <div class="sidebar-logout">
+        <button type="button">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3"/><path d="m15 16 4-4-4-4"/><path d="M19 12H9"/></svg>
+          Выйти
+        </button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <h1>Дашборд</h1>
+          <div class="subtitle">Обзор состояния системы и узлов</div>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stats-card">
+          <div class="stats-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6.6" rx="2"/><rect x="3" y="13.4" width="18" height="6.6" rx="2"/></svg>
+          </div>
+          <div class="stats-content">
+            <div class="stats-value">12</div>
+            <div class="stats-label">Всего узлов</div>
+          </div>
+          <div class="stats-trend up">+2</div>
+        </div>
+
+        <div class="stats-card">
+          <div class="stats-icon" style="background: var(--nx-success-bg); color: var(--nx-success);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div class="stats-content">
+            <div class="stats-value">10</div>
+            <div class="stats-label">Онлайн</div>
+          </div>
+          <div class="stats-trend up">83%</div>
+        </div>
+
+        <div class="stats-card">
+          <div class="stats-icon" style="background: var(--nx-warning-bg); color: var(--nx-warning);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.8" r="3.3"/><path d="M3.4 20c.6-3.3 2.9-5.1 5.6-5.1s5 1.8 5.6 5.1"/></svg>
+          </div>
+          <div class="stats-content">
+            <div class="stats-value">137</div>
+            <div class="stats-label">Клиентов</div>
+          </div>
+          <div class="stats-trend down">-3</div>
+        </div>
+
+        <div class="stats-card">
+          <div class="stats-icon" style="background: var(--nx-info-bg); color: var(--nx-info);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 2.7v5.4c0 4.7-3 7.9-7 9.9-4-2-7-5.2-7-9.9V5.7L12 3z"/></svg>
+          </div>
+          <div class="stats-content">
+            <div class="stats-value">6/6</div>
+            <div class="stats-label">VPN-службы</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Последние узлы</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Имя</th>
+                <th>IP адрес</th>
+                <th>Клиенты</th>
+                <th>Статус</th>
+                <th>Uptime</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>vpn-q</strong></td>
+                <td style="font-family: var(--nx-font-mono); font-size: 13px;">31.77.146.62</td>
+                <td>137</td>
+                <td><span class="status-dot online"></span> <span class="badge success">Онлайн</span></td>
+                <td>14д 6ч</td>
+                <td><a href="#" class="btn btn-secondary" style="padding: 6px 12px; min-height: 32px; font-size: 13px;">Открыть</a></td>
+              </tr>
+              <tr>
+                <td><strong>vpn-eu</strong></td>
+                <td style="font-family: var(--nx-font-mono); font-size: 13px;">185.22.174.10</td>
+                <td>89</td>
+                <td><span class="status-dot online"></span> <span class="badge success">Онлайн</span></td>
+                <td>7д 12ч</td>
+                <td><a href="#" class="btn btn-secondary" style="padding: 6px 12px; min-height: 32px; font-size: 13px;">Открыть</a></td>
+              </tr>
+              <tr>
+                <td><strong>vpn-us</strong></td>
+                <td style="font-family: var(--nx-font-mono); font-size: 13px;">104.21.45.78</td>
+                <td>42</td>
+                <td><span class="status-dot offline"></span> <span class="badge danger">Оффлайн</span></td>
+                <td>—</td>
+                <td><a href="#" class="btn btn-secondary" style="padding: 6px 12px; min-height: 32px; font-size: 13px;">Открыть</a></td>
+              </tr>
+              <tr>
+                <td><strong>vpn-asia</strong></td>
+                <td style="font-family: var(--nx-font-mono); font-size: 13px;">103.45.67.89</td>
+                <td>28</td>
+                <td><span class="status-dot online"></span> <span class="badge warning">Деград.</span></td>
+                <td>2д 4ч</td>
+                <td><a href="#" class="btn btn-secondary" style="padding: 6px 12px; min-height: 32px; font-size: 13px;">Открыть</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Форма добавления узла</h2>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label for="node-name">Название узла</label>
+            <input type="text" id="node-name" placeholder="Например: vpn-eu">
+          </div>
+          <div>
+            <label for="node-ip">IP адрес</label>
+            <input type="text" id="node-ip" placeholder="185.22.174.10">
+          </div>
+          <div>
+            <label for="node-port">Порт</label>
+            <input type="text" id="node-port" placeholder="5959">
+          </div>
+          <div>
+            <label for="node-region">Регион</label>
+            <input type="text" id="node-region" placeholder="EU, Frankfurt">
+          </div>
+        </div>
+        <div style="display: flex; gap: 12px; margin-top: 20px;">
+          <button class="btn btn-primary">Сохранить</button>
+          <button class="btn btn-secondary">Отмена</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    function toggleTheme() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-color-mode');
+      html.setAttribute('data-color-mode', current === 'dark' ? 'light' : 'dark');
+      localStorage.setItem('agg.color-theme.v1', current === 'dark' ? 'light' : 'dark');
+    }
+
+    // Инициализация темы
+    (function() {
+      try {
+        const saved = localStorage.getItem('agg.color-theme.v1');
+        if (saved) document.documentElement.setAttribute('data-color-mode', saved);
+      } catch(_) {}
+    })();
+  </script>
+</body>
+</html>

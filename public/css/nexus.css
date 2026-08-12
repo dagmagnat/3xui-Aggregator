@@ -1,0 +1,150 @@
+/* Nexus Panel: final visual system. Loaded after the historical stage layers. */
+:root {
+  --nx-bg: #080f1c;
+  --nx-bg-soft: #0d1626;
+  --nx-surface: #101b2d;
+  --nx-surface-raised: #142238;
+  --nx-line: #23334b;
+  --nx-line-strong: #2e4663;
+  --nx-text: #f3f7fc;
+  --nx-soft: #c5d1e0;
+  --nx-muted: #8292a8;
+  --nx-accent: #24b8d0;
+  --nx-accent-strong: #159bb7;
+  --nx-success: #35d39a;
+  --nx-danger: #fb7185;
+  --nx-radius: 10px;
+  --nx-shadow: 0 14px 36px rgba(0, 0, 0, .22);
+}
+
+html, body, body.redesign-stage52 {
+  background: var(--nx-bg) !important;
+  color: var(--nx-text) !important;
+}
+
+body.redesign-stage52,
+body.redesign-stage52 input,
+body.redesign-stage52 select,
+body.redesign-stage52 textarea,
+body.redesign-stage52 button {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  letter-spacing: 0 !important;
+}
+
+body.redesign-stage52 {
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+  background: linear-gradient(135deg, #080f1c 0%, #0b1422 55%, #091321 100%) !important;
+}
+
+body.redesign-stage52 .layout { grid-template-columns: 256px minmax(0, 1fr) !important; gap: 0 !important; }
+body.redesign-stage52 .sidebar {
+  margin: 0 !important;
+  padding: 24px 16px 18px !important;
+  height: 100vh !important;
+  border: 0 !important;
+  border-right: 1px solid var(--nx-line) !important;
+  border-radius: 0 !important;
+  background: #0b1423 !important;
+  box-shadow: 10px 0 28px rgba(0,0,0,.16) !important;
+}
+body.redesign-stage52 .main { padding: 30px 36px 40px !important; }
+
+body.redesign-stage52 .brand { gap: 12px !important; padding: 0 8px 22px !important; margin: 0 0 18px !important; border-color: var(--nx-line) !important; }
+body.redesign-stage52 .brand-shield {
+  width: 42px !important; height: 42px !important; min-width: 42px !important;
+  border-radius: 10px !important; background: rgba(36,184,208,.14) !important;
+  border: 1px solid rgba(36,184,208,.4) !important; color: var(--nx-accent) !important;
+}
+body.redesign-stage52 .brand-text strong { font-size: 16px !important; line-height: 1.1 !important; letter-spacing: .01em !important; }
+body.redesign-stage52 .brand-text small { display: block !important; margin-top: 4px !important; color: var(--nx-muted) !important; font-size: 10px !important; }
+
+body.redesign-stage52 .side-nav { gap: 4px !important; }
+body.redesign-stage52 .side-nav a {
+  min-height: 42px !important; padding: 9px 12px !important; border-radius: 8px !important;
+  color: var(--nx-soft) !important; font-size: 13px !important; font-weight: 650 !important;
+  background: transparent !important;
+}
+body.redesign-stage52 .side-nav a:hover { color: var(--nx-text) !important; background: rgba(255,255,255,.045) !important; }
+body.redesign-stage52 .side-nav a.active {
+  color: #fff !important; background: rgba(36,184,208,.13) !important;
+  border-color: rgba(36,184,208,.35) !important; box-shadow: inset 3px 0 0 var(--nx-accent) !important;
+}
+body.redesign-stage52 .side-nav .nav-icon { color: var(--nx-muted) !important; }
+body.redesign-stage52 .side-nav a.active .nav-icon { color: var(--nx-accent) !important; }
+
+body.redesign-stage52 .topbar { margin: 0 0 24px !important; }
+body.redesign-stage52 .page-intro h1, body.redesign-stage52 .main h1 {
+  font-size: 30px !important; line-height: 1.15 !important; letter-spacing: 0 !important; font-weight: 750 !important;
+}
+body.redesign-stage52 .subtitle { color: var(--nx-muted) !important; font-size: 13px !important; }
+
+body.redesign-stage52 .card,
+body.redesign-stage52 .table-wrap,
+body.redesign-stage52 .modal-card,
+body.redesign-stage52 .stats-card,
+body.redesign-stage52 .nodes-list-panel,
+body.redesign-stage52 .nodes-detail-panel,
+body.redesign-stage52 .settings-panel {
+  background: var(--nx-surface) !important; border: 1px solid var(--nx-line) !important;
+  border-radius: var(--nx-radius) !important; box-shadow: var(--nx-shadow) !important;
+}
+body.redesign-stage52 .card { padding: 20px !important; }
+body.redesign-stage52 .card h2, body.redesign-stage52 .card h3 { font-weight: 700 !important; letter-spacing: 0 !important; }
+body.redesign-stage52 .muted, body.redesign-stage52 .hint, body.redesign-stage52 small { color: var(--nx-muted) !important; }
+
+body.redesign-stage52 input:not([type="checkbox"]):not([type="radio"]),
+body.redesign-stage52 select, body.redesign-stage52 textarea {
+  min-height: 40px !important; border-radius: 8px !important; background: #0b1525 !important;
+  border: 1px solid var(--nx-line) !important; color: var(--nx-text) !important; font-size: 13px !important;
+}
+body.redesign-stage52 input:focus, body.redesign-stage52 select:focus, body.redesign-stage52 textarea:focus {
+  border-color: var(--nx-accent) !important; box-shadow: 0 0 0 3px rgba(36,184,208,.14) !important;
+}
+body.redesign-stage52 button, body.redesign-stage52 .btn-main, body.redesign-stage52 .btn-secondary, body.redesign-stage52 .link-btn {
+  min-height: 38px !important; border-radius: 8px !important; padding: 8px 14px !important;
+  font-size: 13px !important; font-weight: 700 !important; transition: background .16s ease, border-color .16s ease, transform .16s ease !important;
+}
+body.redesign-stage52 button:hover, body.redesign-stage52 .btn-main:hover, body.redesign-stage52 .btn-secondary:hover { transform: translateY(-1px); }
+body.redesign-stage52 .btn-main { background: var(--nx-accent) !important; border-color: var(--nx-accent) !important; color: #03131a !important; }
+body.redesign-stage52 .btn-main:hover { background: #43c8dc !important; }
+body.redesign-stage52 .btn-secondary { background: #15243a !important; border-color: var(--nx-line-strong) !important; color: var(--nx-soft) !important; }
+
+body.redesign-stage52 th { background: #0d1829 !important; color: var(--nx-muted) !important; font-size: 11px !important; }
+body.redesign-stage52 td, body.redesign-stage52 th { border-color: var(--nx-line) !important; padding: 11px 12px !important; }
+body.redesign-stage52 tr:hover td { background: rgba(36,184,208,.035) !important; }
+body.redesign-stage52 a { color: #55cde0; }
+body.redesign-stage52 .sidebar-order-button { border-color: var(--nx-line) !important; background: #101d30 !important; color: var(--nx-soft) !important; }
+body.redesign-stage52 .sidebar-user-card { background: #101d30 !important; border-color: var(--nx-line) !important; border-radius: 9px !important; }
+body.redesign-stage52 .sidebar-logout button { background: transparent !important; border-color: transparent !important; color: var(--nx-muted) !important; }
+
+body.login-page.redesign-stage52 .login-wrap {
+  min-height: 100vh !important; display: grid !important; place-items: center !important; padding: 24px !important;
+  background: radial-gradient(circle at 50% 15%, rgba(36,184,208,.12), transparent 35%) !important;
+}
+body.login-page.redesign-stage52 .login-card { width: min(420px, 100%) !important; padding: 34px !important; border-radius: 14px !important; }
+body.login-page.redesign-stage52 .login-brand { color: var(--nx-text) !important; font-size: 22px !important; font-weight: 800 !important; }
+body.login-page.redesign-stage52 .login-brand span { color: var(--nx-accent) !important; }
+body.login-page.redesign-stage52 .login-brand small { display: block !important; margin: 4px 0 24px !important; text-transform: uppercase !important; letter-spacing: .13em !important; font-size: 9px !important; }
+body.login-page.redesign-stage52 .login-card h1 { font-size: 24px !important; margin-bottom: 22px !important; }
+body.login-page.redesign-stage52 .login-form { display: grid !important; gap: 9px !important; }
+body.login-page.redesign-stage52 .login-form label:not(:first-child) { margin-top: 8px !important; }
+body.login-page.redesign-stage52 .login-submit { margin-top: 14px !important; background: var(--nx-accent) !important; border-color: var(--nx-accent) !important; color: #04151b !important; }
+
+@media (max-width: 860px) {
+  body.redesign-stage52 .main { padding: 18px 14px 108px !important; }
+  body.redesign-stage52 .mobile-shellbar { padding: 18px 14px 14px !important; background: #0b1423 !important; border-color: var(--nx-line) !important; }
+  body.redesign-stage52 .mobile-shell-title strong { font-size: 22px !important; letter-spacing: 0 !important; }
+  body.redesign-stage52 .card { padding: 16px !important; border-radius: 10px !important; }
+  body.redesign-stage52 .mobile-bottom-nav { left: 12px !important; right: 12px !important; bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important; border-radius: 14px !important; background: #101d30 !important; border-color: var(--nx-line-strong) !important; }
+  body.redesign-stage52 .mobile-bottom-nav a { border-radius: 8px !important; }
+  body.redesign-stage52 .mobile-bottom-nav a.active { background: rgba(36,184,208,.18) !important; color: var(--nx-accent) !important; }
+}
+
+html[data-color-mode="light"] body.redesign-stage52 {
+  --nx-bg: #f3f6fa; --nx-surface: #fff; --nx-line: #d9e2ec; --nx-line-strong: #b8c8d8;
+  --nx-text: #172437; --nx-soft: #41536a; --nx-muted: #718197;
+  background: #f3f6fa !important; color: var(--nx-text) !important;
+}
+html[data-color-mode="light"] body.redesign-stage52 .sidebar { background: #fff !important; }
+html[data-color-mode="light"] body.redesign-stage52 input:not([type="checkbox"]):not([type="radio"]), html[data-color-mode="light"] body.redesign-stage52 select, html[data-color-mode="light"] body.redesign-stage52 textarea { background: #f8fafc !important; }

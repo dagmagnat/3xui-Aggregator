@@ -1,0 +1,5 @@
+docs/H1CLOUD_NODES.md
+views/dashboard.ejs.bak
+views/nodes.ejs.bak
+views/partials_footer.ejs.bak
+views/partials_header.ejs.bak

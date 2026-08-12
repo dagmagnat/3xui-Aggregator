@@ -1,0 +1,819 @@
+<%
+  function flagEmojiFromCode(code) {
+    const cc = String(code || '').trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(cc) || ['ZZ','XX'].includes(cc)) return '';
+    return Array.from(cc).map(ch => String.fromCodePoint(0x1F1E6 + ch.charCodeAt(0) - 65)).join('');
+  }
+  function flagHtml(code, fallback, name) {
+    const rawCode = String(code || '').trim().toLowerCase();
+    const flagValue = String(fallback || '').trim();
+    const nameText = String(name || '').trim();
+    const codeFromName = (typeof countryCodeByName === 'function') ? String(countryCodeByName(nameText) || '').trim().toLowerCase() : '';
+    const code2 = (/^[a-z]{2}$/i.test(rawCode) ? rawCode : (/^[a-z]{2}$/i.test(flagValue) ? flagValue.toLowerCase() : codeFromName));
+    if (code2 && !['zz','xx'].includes(code2)) {
+      return `<img class="flag-badge flag-img" src="/flags/${code2}.svg" alt="${code2.toUpperCase()}" loading="lazy" onerror="this.style.display='none'">`;
+    }
+    const emoji = (typeof countryFlagText === 'function')
+      ? countryFlagText(code, flagValue, nameText)
+      : ((flagValue && flagValue !== '🌐' && !/^[a-z]{2}$/i.test(flagValue)) ? flagValue : flagEmojiFromCode(code || flagValue));
+    return emoji ? `<span class="flag-badge emoji-fallback" aria-label="${String(code || '').toUpperCase()}">${emoji}</span>` : '';
+  }
+  function compactTransportLabel(label) {
+    const raw = String(label || '').trim();
+    if (!raw) return 'не загружено';
+    return raw
+      .replace(/\s*\/\s*RAW/gi, '')
+      .replace(/\s*\/\s*TCP/gi, '')
+      .replace(/\s*\/\s*JSON/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/\s*\/\s*/g, ' / ')
+      .trim() || raw;
+  }
+%>
+
+<%- include('partials_header', { pageTitle: 'Узлы', pageSubtitle: 'Добавление, проверка и управление 3x-ui и H1Cloud узлами', activePage: 'nodes' }) %>
+
+<% if (message) { %>
+  <div class="alert ok"><%= message %></div>
+<% } %>
+
+<% if (error) { %>
+  <div class="alert err"><%= error %></div>
+<% } %>
+
+<div class="desktop-page-tabs" data-page-tabs="nodes">
+  <button type="button" class="is-active" data-tab-target="list">🧩 Список узлов</button>
+  <button type="button" data-tab-target="add">➕ Добавить узел</button>
+  <button type="button" data-tab-target="help">ℹ️ Подсказка</button>
+</div>
+
+
+<div class="grid">
+  <section class="card span-12 tab-panel" data-tab-panel="add">
+    <h2>Добавить узел</h2>
+    <form method="post" action="/nodes" class="js-long-action" data-loading-title="Добавляю узел" data-loading-text="Проверяю узел и при включённом создании добавляю существующих клиентов агрегатора в новый узел.">
+      <div class="form-grid">
+        <div class="field">
+          <label>Страна</label>
+          <select name="country_code" required>
+            <option value="">Выбери страну</option>
+            <% countries.forEach(country => { %>
+              <option value="<%= country.code %>"><%= country.name_ru %></option>
+            <% }) %>
+          </select>
+        </div>
+
+        <div class="field half">
+          <label>Свой регион, если выбрано «Другое»</label>
+          <input name="custom_country_name_ru" placeholder="например: Europe Auto, Private" />
+          <small class="hint">Используется только для пункта «Другое / свой регион».</small>
+        </div>
+        <div class="field half">
+          <label>Свой флаг / emoji</label>
+          <input name="custom_country_flag" placeholder="🇪🇺 или 🌐" maxlength="8" />
+        </div>
+
+        <div class="field">
+          <label>Доп. название узла</label>
+          <input name="label_suffix" placeholder="например: 1, 2, Frankfurt, Hetzner" />
+          <small class="hint">Например: Германия + 1 = Германия-1. Флаг и страна остаются от выбранной страны в подписке.</small>
+        </div>
+
+        <div class="field">
+          <label>Тип узла</label>
+          <select name="node_type" class="js-node-type-select">
+            <option value="3xui" selected>3x-ui</option>
+            <option value="h1cloud">H1Cloud VLESS</option>
+          </select>
+          <small class="hint">3x-ui управляется через inbound. H1Cloud управляется через API token и отдаёт готовые ссылки из своего SUB-порта.</small>
+        </div>
+
+        <div class="field">
+          <label>API / Panel URL</label>
+          <input name="panel_url" placeholder="3x-ui: https://panel.example.com:2053 · H1Cloud: http://IP:API_PORT/api" required />
+          <small class="hint">Для H1Cloud вставь API Base URL, например <code>http://150.241.65.217:25042/api</code>.</small>
+        </div>
+
+        <div class="field js-node-h1-only hidden">
+          <label>H1Cloud SUB Base URL</label>
+          <input name="sub_base_url" placeholder="http://IP:SUB_PORT" />
+          <small class="hint">Например <code>http://150.241.65.217:25043</code>. Если пусто, агрегатор попробует взять API-порт + 1.</small>
+        </div>
+
+        <div class="field half js-node-h1-only hidden">
+          <label>Фильтр ссылок H1Cloud</label>
+          <select name="h1cloud_link_mode">
+            <option value="vless_reality" selected>Только VLESS REALITY</option>
+            <option value="vless_all">Только VLESS</option>
+            <option value="vless_ws">Только VLESS WS</option>
+            <option value="all">Все ссылки из H1Cloud</option>
+          </select>
+          <small class="hint">По умолчанию в подписку попадут только <code>vless://</code> ссылки с <code>security=reality</code>.</small>
+        </div>
+
+        <div class="field half js-node-h1-only hidden">
+          <label>uTLS browser / fingerprint</label>
+          <select name="h1cloud_fingerprint_select" class="js-h1cloud-fingerprint-select">
+            <option value="keep" selected>Не менять, как отдаёт H1Cloud</option>
+            <option value="firefox">firefox</option>
+            <option value="edge">edge</option>
+            <option value="android">android</option>
+            <option value="ios">ios</option>
+            <option value="random">random</option>
+            <option value="randomized">randomized</option>
+            <option value="safari">safari</option>
+            <option value="chrome">chrome</option>
+            <option value="360">360</option>
+            <option value="qq">qq</option>
+            <option value="custom">Вручную / uTLS Hello...</option>
+          </select>
+          <small class="hint">Если выбрано не «Не менять», агрегатор заменит или добавит параметр <code>fp=...</code> в VLESS-ссылках.</small>
+        </div>
+
+        <div class="field half js-node-h1-only js-h1cloud-custom-fingerprint hidden">
+          <label>Свой uTLS fingerprint</label>
+          <input name="h1cloud_fingerprint_custom" placeholder="например: HelloFirefox_105 или HelloRandomizedNoALPN" />
+          <small class="hint">Работают только значения, которые понимает клиентский Xray/uTLS. Обычное название любого браузера не всегда допустимо.</small>
+        </div>
+
+        <div class="field js-node-3xui-only">
+          <label>Panel Path</label>
+          <input name="panel_path" placeholder="/qwerty123" />
+        </div>
+
+        <div class="field">
+          <label>Метод API</label>
+          <select name="api_auth_mode" class="js-api-auth-mode" data-target="add-node-auth-fields">
+            <option value="token" selected>API Token</option>
+            <option value="password">3x-ui старый метод: логин и пароль</option>
+          </select>
+          <small class="hint">Для H1Cloud режим API Token включается автоматически. Токен бери командой <code>vpn api token</code>.</small>
+        </div>
+
+        <div id="add-node-auth-fields" class="auth-mode-fields field full">
+          <div class="auth-password-fields form-grid hidden">
+            <div class="field half">
+              <label>Логин панели</label>
+              <input name="username" placeholder="admin" data-required-when="password" />
+            </div>
+
+            <div class="field half">
+              <label>Пароль панели</label>
+              <input name="password" type="password" data-required-when="password" />
+            </div>
+          </div>
+
+          <div class="auth-token-fields">
+            <label>API Token</label>
+            <input name="api_token" type="password" placeholder="3x-ui API Token или H1Cloud vpn api token" data-required-when="token" />
+            <small class="hint">Токен хранится в агрегаторе в зашифрованном виде. Для H1Cloud логин/пароль не нужны.</small>
+          </div>
+        </div>
+
+        <div class="field half js-node-3xui-only">
+          <label>Inbound ID</label>
+          <input name="inbound_id" type="number" min="1" placeholder="1" required />
+        </div>
+
+        <div class="field full protocol-recommend-card js-node-3xui-only" data-protocol-recommend-root>
+          <h3>Рекомендации протокола и транспорта</h3>
+          <small class="hint">Выбери то, что создаёшь в оригинальной 3x-ui. Панель подскажет обязательные поля и типовые значения. Это справка для создания inbound в 3x-ui; после добавления узла можно нажать «Загрузить параметры из 3x-ui» и сохранить точные значения.</small>
+          <div class="recommend-grid">
+            <label>Protocol<select data-rec-protocol><option value="vless">VLESS</option><option value="trojan">Trojan</option><option value="shadowsocks">Shadowsocks</option><option value="wireguard">WireGuard</option><option value="hysteria">Hysteria / Hysteria2</option><option value="http">HTTP</option><option value="mixed">Mixed</option><option value="tunnel">Tunnel</option></select></label>
+            <label>Transport<select data-rec-network><option value="raw">RAW</option><option value="tcp">TCP</option><option value="ws">WebSocket</option><option value="grpc">gRPC</option><option value="httpupgrade">HTTP Upgrade</option><option value="xhttp">xHTTP</option><option value="kcp">mKCP</option></select></label>
+            <label>Домен SNI/Host<input data-rec-domain placeholder="cdn.example.com / m.vk.com" /></label>
+          </div>
+          <div class="protocol-recommend-output" data-rec-output></div>
+        </div>
+
+        <div class="field js-node-3xui-only">
+          <label>SNI в подписках</label>
+          <select name="sni_mode" data-sni-source>
+            <option value="inbound" selected>Из 3x-ui inbound</option>
+            <option value="profile">Выбрать SNI-профиль</option>
+            <option value="manual">Ручной SNI</option>
+          </select>
+          <small class="hint">Если выбран профиль или ручной SNI, при добавлении узла агрегатор применит SNI и Target в 3x-ui inbound: target = SNI:443.</small>
+        </div>
+        <div class="field half js-node-3xui-only" data-sni-profile-field>
+          <label>SNI-профиль</label>
+          <select name="sni_profile_id">
+            <option value="">Не выбран</option>
+            <% (sniProfiles || []).forEach(profile => { %>
+              <option value="<%= profile.id %>"><%= profile.name %> · <%= profile.sni %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="field half js-node-3xui-only" data-sni-manual-field>
+          <label>Ручной SNI</label>
+          <input name="sni_override" placeholder="m.vk.com" />
+        </div>
+      </div>
+
+      <label class="switch-row compact add-clients-switch">
+        <input type="checkbox" name="create_existing_clients_on_node" value="1" checked />
+        <span>
+          <strong>Создать существующих клиентов в новом узле</strong>
+          <small>После сохранения агрегатор возьмёт клиентов из своей базы и создаст/обновит их в новом узле. Сроки, лимиты, UUID и статус берутся из агрегатора.</small>
+        </span>
+      </label>
+
+      <label class="switch-row compact add-clients-switch">
+        <input type="checkbox" name="import_clients_from_node" value="1" />
+        <span>
+          <strong>Импортировать клиентов из нового узла в агрегатор</strong>
+          <small>Включай только если на этом узле уже есть клиенты, которых ещё нет в агрегаторе. По умолчанию выключено, чтобы старый узел не перезаписал сроки и лимиты. Для H1Cloud импорт берёт список из его API /clients.</small>
+        </span>
+      </label>
+
+      <div class="actions node-actions add-node-actions">
+        <button type="submit" class="btn-main add-node-submit">Добавить узел</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card span-12 tab-panel" data-tab-panel="help">
+    <h2>Подсказка</h2>
+    <div class="kv-list">
+      <div class="kv-item">
+        <strong>Отключение узла</strong>
+        <div class="muted">Если на узле техработы, нажми «Отключить». Узел останется в панели, но исчезнет из SUB/JSON подписок клиентов.</div>
+      </div>
+      <div class="kv-item">
+        <strong>Доп. название</strong>
+        <div class="muted">Используется в названии сервера внутри подписки: Германия-1, Германия-2, Финляндия Hetzner.</div>
+      </div>
+      <div class="kv-item">
+        <strong>H1Cloud VLESS</strong>
+        <div class="muted">На сервере проверь <code>vpn ports</code>, <code>vpn api token</code> и <code>vpn api status</code>. В агрегаторе выбери тип H1Cloud, укажи API URL, SUB URL, API token, фильтр ссылок и uTLS fingerprint.</div>
+      </div>
+      <div class="kv-item">
+        <strong>API / Panel URL</strong>
+        <div class="muted">Для 3x-ui — адрес панели/API. Для H1Cloud — API Base URL вида http://IP:API_PORT/api.</div>
+      </div>
+      <div class="kv-item">
+        <strong>Inbound ID / H1Cloud SUB</strong>
+        <div class="muted">Для 3x-ui нужен inbound. Для H1Cloud inbound не нужен: агрегатор создаёт клиента через API и забирает его готовую подписку с SUB-порта.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card span-12 tab-panel nodes-modern-card is-active" data-tab-panel="list">
+    <div class="nodes-modern-head">
+      <div class="section-title-row nodes-order-title">
+        <h2><span class="section-icon" aria-hidden="true">🗂️</span>Список узлов <span class="count-chip"><%= nodes.length %></span></h2>
+        <span id="nodeOrderStatus" class="muted">Перетащи ⠿ на ПК или используй ↑/↓ на телефоне, чтобы изменить порядок в приложении</span>
+      </div>
+      <% if (nodes.length) { %>
+        <div class="nodes-modern-toolbar" role="search">
+          <label class="nodes-search-field" for="nodeSearchInput">
+            <span aria-hidden="true">⌕</span>
+            <input id="nodeSearchInput" type="search" placeholder="Поиск по названию, ID или URL..." autocomplete="off" />
+          </label>
+          <label class="nodes-filter-field">
+            <span>Тип</span>
+            <select id="nodeTypeFilter">
+              <option value="all">Все</option>
+              <option value="3xui">3x-ui</option>
+              <option value="h1cloud">H1Cloud</option>
+            </select>
+          </label>
+          <label class="nodes-filter-field">
+            <span>Статус</span>
+            <select id="nodeStateFilter">
+              <option value="all">Все</option>
+              <option value="enabled">Включён</option>
+              <option value="disabled">Отключён</option>
+              <option value="online">online</option>
+              <option value="offline">offline</option>
+            </select>
+          </label>
+          <button type="button" class="secondary nodes-reset-filter" id="nodeResetFilters" title="Сбросить фильтры">↻</button>
+        </div>
+      <% } %>
+    </div>
+
+    <% if (!nodes.length) { %>
+      <p class="muted">Пока нет добавленных узлов.</p>
+    <% } else { %>
+      <div class="nodes-modern-layout" id="nodesModernLayout">
+        <div class="nodes-list-panel">
+          <div class="nodes-list-header">
+            <span>ID</span>
+            <span>Название</span>
+            <span>Тип</span>
+            <span>Транспорт</span>
+            <span>Статус</span>
+            <span>Активность</span>
+          </div>
+          <div id="nodesOrderBody" class="nodes-modern-list" data-page-size="<%= nodePageSize || 10 %>">
+            <% nodes.forEach((node, idx) => {
+              const suffix = (node.label_suffix || '').trim();
+              const baseName = node.country_name_ru || node.name;
+              const displayName = suffix
+                ? (/^\d+$/.test(suffix) ? `${baseName}-${suffix}` : `${baseName} ${suffix}`)
+                : baseName;
+              const isEnabled = Number(node.enabled) === 1;
+              const isH1 = String(node.node_type || '3xui') === 'h1cloud';
+              const nodeKind = isH1 ? 'h1cloud' : '3xui';
+              const nodeTypeLabel = node.node_type_label || (isH1 ? 'H1Cloud VLESS' : '3x-ui');
+              const transportLabel = node.transport_label || 'не загружено';
+              const transportCompact = compactTransportLabel(transportLabel);
+              const activityStatus = node.last_status || 'unknown';
+              const searchText = [node.id, displayName, nodeTypeLabel, node.panel_url, node.panel_path, node.sub_base_url, node.inbound_id, transportLabel, activityStatus, node.last_error].join(' ').toLowerCase();
+            %>
+              <div
+                class="node-list-row <%= idx === 0 ? 'is-selected' : '' %> <%= isEnabled ? '' : 'muted-row' %>"
+                draggable="true"
+                data-node-id="<%= node.id %>"
+                data-node-type="<%= nodeKind %>"
+                data-node-enabled="<%= isEnabled ? 'enabled' : 'disabled' %>"
+                data-node-activity="<%= activityStatus %>"
+                data-node-search="<%= searchText %>"
+              >
+                <button type="button" class="drag-handle" title="Перетащить узел" aria-label="Перетащить узел">⠿</button>
+                <button type="button" class="node-row-select" data-select-node="<%= node.id %>" aria-label="Открыть детали узла <%= displayName %>">
+                  <span class="node-row-id"><%= node.id %></span>
+                  <span class="node-row-name"><strong><%- flagHtml(node.country_code, node.country_flag, node.country_name_ru || node.name) %><span><%= displayName %></span></strong></span>
+                  <span class="node-row-type"><%= nodeTypeLabel %></span>
+                  <span class="transport-chip transport-chip-full"><%= isH1 ? 'H1Cloud' : transportCompact %></span><span class="transport-chip transport-chip-mobile"><%= isH1 ? 'H1Cloud' : transportCompact %></span>
+                  <span class="badge <%= isEnabled ? 'online' : 'offline' %>"><%= isEnabled ? 'Включён' : 'Отключён' %></span>
+                  <span class="node-row-activity"><span class="badge <%= activityStatus %>"><%= activityStatus %></span><span class="signal-bars" aria-hidden="true"><i></i><i></i><i></i></span></span>
+                  <span class="node-row-chevron" aria-hidden="true">›</span>
+                </button>
+                <div class="node-mobile-order-controls" aria-label="Изменить порядок узла">
+                  <button type="button" class="secondary mobile-order-btn" data-mobile-move="up" title="Поднять выше">↑</button>
+                  <button type="button" class="secondary mobile-order-btn" data-mobile-move="down" title="Опустить ниже">↓</button>
+                </div>
+              </div>
+            <% }) %>
+          </div>
+          <div class="nodes-list-footer">
+            <span>Показано <strong id="nodesPageRange">0–0</strong> из <strong id="visibleNodesCount"><%= nodes.length %></strong> узлов</span>
+            <div class="nodes-pagination" id="nodesPagination" aria-label="Страницы узлов"></div>
+          </div>
+        </div>
+
+        <aside class="nodes-detail-panel" id="nodesDetailPanel" aria-live="polite">
+          <button type="button" class="nodes-detail-close" id="nodeDetailsClose" aria-label="Скрыть детали">×</button>
+          <% nodes.forEach((node, idx) => {
+            const suffix = (node.label_suffix || '').trim();
+            const baseName = node.country_name_ru || node.name;
+            const displayName = suffix
+              ? (/^\d+$/.test(suffix) ? `${baseName}-${suffix}` : `${baseName} ${suffix}`)
+              : baseName;
+            const isEnabled = Number(node.enabled) === 1;
+            const isH1 = String(node.node_type || '3xui') === 'h1cloud';
+            const nodeTypeLabel = node.node_type_label || (isH1 ? 'H1Cloud VLESS' : '3x-ui');
+            const transportLabel = node.transport_label || 'не загружено';
+            const transportCompact = compactTransportLabel(transportLabel);
+            const activityStatus = node.last_status || 'unknown';
+            const apiValue = node.panel_url || '-';
+            const pathValue = isH1 ? (node.sub_base_url || '-') : (node.panel_path || '-');
+            const inboundValue = isH1 ? '—' : (node.inbound_id || '-');
+            const fpValue = isH1 ? (node.h1cloud_fingerprint || 'как в H1Cloud') : (node.inbound_fingerprint || 'не загружено');
+          %>
+            <article class="node-detail-card <%= idx === 0 ? 'is-active' : '' %>" data-detail-node-id="<%= node.id %>" <%= idx === 0 ? '' : 'hidden' %>>
+              <div class="node-detail-title-row">
+                <div class="node-detail-flag"><%- flagHtml(node.country_code, node.country_flag, node.country_name_ru || node.name) || '<span class="flag-badge emoji-fallback">🌐</span>' %></div>
+                <div class="node-detail-title">
+                  <div><strong><%= displayName %></strong> <span class="badge <%= isEnabled ? 'online' : 'offline' %>"><%= isEnabled ? 'Включён' : 'Отключён' %></span></div>
+                  <small>ID: <%= node.id %> · Тип: <%= nodeTypeLabel %> · Транспорт: <%= transportLabel %></small>
+                </div>
+              </div>
+
+              <div class="node-detail-kv">
+                <div class="node-detail-kv-row">
+                  <span>API / Panel URL</span>
+                  <code><%= apiValue %></code>
+                  <button type="button" class="copy-mini" data-copy-text="<%= apiValue %>" title="Копировать">⧉</button>
+                </div>
+                <div class="node-detail-kv-row">
+                  <span><%= isH1 ? 'SUB Base URL' : 'Path' %></span>
+                  <code><%= pathValue %></code>
+                  <button type="button" class="copy-mini" data-copy-text="<%= pathValue %>" title="Копировать">⧉</button>
+                </div>
+                <div class="node-detail-kv-row">
+                  <span>Inbound</span>
+                  <strong><%= inboundValue %></strong>
+                </div>
+                <div class="node-detail-kv-row">
+                  <span>Fingerprint</span>
+                  <code><%= fpValue %></code>
+                  <button type="button" class="copy-mini" data-copy-text="<%= fpValue %>" title="Копировать">⧉</button>
+                </div>
+                <% if (isH1) { %>
+                  <div class="node-detail-kv-row">
+                    <span>Фильтр H1Cloud</span>
+                    <strong><%= node.h1cloud_link_mode || 'vless_reality' %></strong>
+                  </div>
+                <% } %>
+                <% if (node.last_error) { %>
+                  <div class="node-detail-kv-row danger-row">
+                    <span>Ошибка</span>
+                    <code><%= node.last_error %></code>
+                  </div>
+                <% } %>
+              </div>
+
+              <div class="node-detail-section">
+                <h3>Статус и активность</h3>
+                <div class="node-status-grid">
+                  <div><span>Статус</span><strong class="badge <%= isEnabled ? 'online' : 'offline' %>"><%= isEnabled ? 'Включён' : 'Отключён' %></strong></div>
+                  <div><span>Активность</span><strong class="badge <%= activityStatus %>"><%= activityStatus %></strong></div>
+                </div>
+              </div>
+
+              <div class="node-detail-section">
+                <h3>Метки</h3>
+                <div class="node-tags">
+                  <span><%= isH1 ? 'h1cloud' : '3x-ui' %></span>
+                  <span><%= isEnabled ? 'enabled' : 'disabled' %></span>
+                  <% if (node.transport_security) { %><span><%= node.transport_security %></span><% } %>
+                  <% if (node.country_code) { %><span><%= String(node.country_code).toLowerCase() %></span><% } %>
+                </div>
+              </div>
+
+              <div class="node-detail-actions">
+                <form method="post" action="/nodes/<%= node.id %>/check" class="inline-form">
+                  <button type="submit" class="btn-main">Проверить</button>
+                </form>
+                <a href="/nodes/<%= node.id %>/edit" class="link-btn secondary">Изменить</a>
+                <form method="post" action="/nodes/<%= node.id %>/toggle" class="inline-form" onsubmit="return confirm('<%= isEnabled ? 'Отключить узел из подписок?' : 'Включить узел обратно в подписки?' %>')">
+                  <% if (isEnabled) { %>
+                    <button type="submit" class="danger">Отключить</button>
+                  <% } else { %>
+                    <button type="submit" class="secondary">Включить</button>
+                  <% } %>
+                </form>
+              </div>
+              <p class="node-detail-last muted">Последний статус: <%= activityStatus %></p>
+            </article>
+          <% }) %>
+        </aside>
+      </div>
+    <% } %>
+  </section>
+</div>
+
+<div id="loadingModal" class="modal hidden loading-modal" aria-live="polite">
+  <div class="modal-card loading-card">
+    <div class="loader-ring"></div>
+    <h2 id="loadingTitle">Загрузка</h2>
+    <p class="muted" id="loadingText">Операция выполняется. Не закрывайте страницу.</p>
+  </div>
+</div>
+
+<script>
+
+function setNodeOrderStatus(text, isError) {
+  const el = document.getElementById('nodeOrderStatus');
+  if (!el) return;
+  el.textContent = text;
+  el.classList.toggle('err-text', !!isError);
+}
+async function saveNodeOrder(order) {
+  if (!order.length) return;
+  setNodeOrderStatus('Сохраняю порядок...', false);
+  const response = await fetch('/nodes/reorder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify({ order })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.ok) throw new Error(data.error || 'Не удалось сохранить порядок');
+  setNodeOrderStatus('Порядок сохранён', false);
+  refreshMobileOrderControls();
+}
+
+function getNodeRows() {
+  return [...document.querySelectorAll('#nodesOrderBody .node-list-row')];
+}
+
+let nodeCurrentPage = 1;
+
+function getNodePageSize() {
+  const list = document.getElementById('nodesOrderBody');
+  const n = Number(list?.dataset.pageSize || 10);
+  return [10, 12, 15].includes(n) ? n : 10;
+}
+
+function getFilteredNodeRows() {
+  return getNodeRows().filter(row => !row.classList.contains('hidden-by-filter'));
+}
+
+function renderNodePagination() {
+  const rows = getFilteredNodeRows();
+  const pageSize = getNodePageSize();
+  const total = rows.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (nodeCurrentPage > totalPages) nodeCurrentPage = totalPages;
+  if (nodeCurrentPage < 1) nodeCurrentPage = 1;
+  const start = total ? (nodeCurrentPage - 1) * pageSize : 0;
+  const end = total ? Math.min(start + pageSize, total) : 0;
+  getNodeRows().forEach(row => row.classList.remove('hidden-by-page'));
+  rows.forEach((row, index) => {
+    row.classList.toggle('hidden-by-page', index < start || index >= end);
+  });
+  const range = document.getElementById('nodesPageRange');
+  if (range) range.textContent = total ? `${start + 1}–${end}` : '0–0';
+  const count = document.getElementById('visibleNodesCount');
+  if (count) count.textContent = String(total);
+  const pager = document.getElementById('nodesPagination');
+  if (pager) {
+    pager.innerHTML = '';
+    if (totalPages > 1) {
+      const mk = (label, page, active, disabled) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = active ? 'is-active' : '';
+        b.textContent = label;
+        b.disabled = !!disabled;
+        b.addEventListener('click', () => { nodeCurrentPage = page; renderNodePagination(); ensureSelectedNodeOnVisiblePage(); });
+        return b;
+      };
+      pager.appendChild(mk('‹', Math.max(1, nodeCurrentPage - 1), false, nodeCurrentPage === 1));
+      for (let i = 1; i <= totalPages; i += 1) pager.appendChild(mk(String(i), i, i === nodeCurrentPage, false));
+      pager.appendChild(mk('›', Math.min(totalPages, nodeCurrentPage + 1), false, nodeCurrentPage === totalPages));
+    }
+  }
+  refreshMobileOrderControls();
+}
+
+function ensureSelectedNodeOnVisiblePage() {
+  const selected = getNodeRows().find(row => row.classList.contains('is-selected'));
+  if (selected && !selected.classList.contains('hidden-by-filter') && !selected.classList.contains('hidden-by-page')) return;
+  const first = getNodeRows().find(row => !row.classList.contains('hidden-by-filter') && !row.classList.contains('hidden-by-page'));
+  if (first) selectNodeDetails(first.dataset.nodeId, { openMobile: false });
+}
+
+function getDesktopNodeOrder() {
+  return getNodeRows().map(row => Number(row.dataset.nodeId)).filter(Boolean);
+}
+
+function getMobileNodeOrder() {
+  return getDesktopNodeOrder();
+}
+
+function refreshMobileOrderControls() {
+  const rows = getNodeRows();
+  rows.forEach((row, index) => {
+    const up = row.querySelector('[data-mobile-move="up"]');
+    const down = row.querySelector('[data-mobile-move="down"]');
+    if (up) up.disabled = index === 0;
+    if (down) down.disabled = index === rows.length - 1;
+  });
+}
+
+function isMobileNodesLayout() {
+  return window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
+}
+
+function selectNodeDetails(id, opts) {
+  const layout = document.getElementById('nodesModernLayout');
+  const openMobile = !!(opts && opts.openMobile);
+  if (layout) {
+    layout.classList.remove('details-hidden');
+    if (isMobileNodesLayout()) {
+      layout.classList.toggle('mobile-details-open', openMobile);
+    } else {
+      layout.classList.remove('mobile-details-open');
+    }
+  }
+  document.querySelectorAll('.node-list-row').forEach(row => {
+    row.classList.toggle('is-selected', String(row.dataset.nodeId) === String(id));
+  });
+  document.querySelectorAll('.node-detail-card').forEach(card => {
+    const active = String(card.dataset.detailNodeId) === String(id);
+    card.classList.toggle('is-active', active);
+    card.hidden = !active;
+  });
+}
+
+function selectFirstVisibleNode() {
+  const first = getNodeRows().find(row => !row.classList.contains('hidden-by-filter') && !row.classList.contains('hidden-by-page'));
+  if (first) selectNodeDetails(first.dataset.nodeId, { openMobile: false });
+}
+
+function updateVisibleNodesCount() {
+  const count = getNodeRows().filter(row => !row.classList.contains('hidden-by-filter')).length;
+  const list = document.getElementById('nodesOrderBody');
+  if (list) list.classList.toggle('is-empty-filter', count === 0);
+  renderNodePagination();
+}
+
+function applyNodeFilters() {
+  const q = String(document.getElementById('nodeSearchInput')?.value || '').trim().toLowerCase();
+  const type = String(document.getElementById('nodeTypeFilter')?.value || 'all');
+  const state = String(document.getElementById('nodeStateFilter')?.value || 'all');
+  let selectedStillVisible = false;
+  getNodeRows().forEach(row => {
+    const matchesText = !q || String(row.dataset.nodeSearch || '').includes(q);
+    const matchesType = type === 'all' || row.dataset.nodeType === type;
+    const matchesState = state === 'all'
+      || row.dataset.nodeEnabled === state
+      || row.dataset.nodeActivity === state;
+    const visible = matchesText && matchesType && matchesState;
+    row.classList.toggle('hidden-by-filter', !visible);
+    if (visible && row.classList.contains('is-selected')) selectedStillVisible = true;
+  });
+  nodeCurrentPage = 1;
+  updateVisibleNodesCount();
+  ensureSelectedNodeOnVisiblePage();
+  if (!selectedStillVisible) {
+    const first = getNodeRows().find(row => !row.classList.contains('hidden-by-filter') && !row.classList.contains('hidden-by-page'));
+    if (first) selectNodeDetails(first.dataset.nodeId, { openMobile: false });
+    else {
+      document.querySelectorAll('.node-detail-card').forEach(card => { card.hidden = true; card.classList.remove('is-active'); });
+    }
+  }
+}
+
+function initNodeDetailsPanel() {
+  document.addEventListener('click', event => {
+    const selector = event.target.closest('[data-select-node]');
+    if (selector) {
+      event.preventDefault();
+      selectNodeDetails(selector.dataset.selectNode, { openMobile: true });
+      return;
+    }
+    const copy = event.target.closest('[data-copy-text]');
+    if (copy) {
+      const text = copy.dataset.copyText || '';
+      if (navigator.clipboard && text && text !== '-') {
+        navigator.clipboard.writeText(text).then(() => {
+          copy.classList.add('copied');
+          setTimeout(() => copy.classList.remove('copied'), 900);
+        }).catch(() => {});
+      }
+    }
+  });
+  const close = document.getElementById('nodeDetailsClose');
+  if (close) close.addEventListener('click', () => {
+    const layout = document.getElementById('nodesModernLayout');
+    if (!layout) return;
+    if (isMobileNodesLayout()) layout.classList.remove('mobile-details-open');
+    else layout.classList.add('details-hidden');
+  });
+  ['nodeSearchInput', 'nodeTypeFilter', 'nodeStateFilter'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', applyNodeFilters);
+    if (el) el.addEventListener('change', applyNodeFilters);
+  });
+  const reset = document.getElementById('nodeResetFilters');
+  if (reset) reset.addEventListener('click', () => {
+    const search = document.getElementById('nodeSearchInput');
+    const type = document.getElementById('nodeTypeFilter');
+    const state = document.getElementById('nodeStateFilter');
+    if (search) search.value = '';
+    if (type) type.value = 'all';
+    if (state) state.value = 'all';
+    applyNodeFilters();
+  });
+  updateVisibleNodesCount();
+}
+
+function initNodeDragOrder() {
+  const body = document.getElementById('nodesOrderBody');
+  if (!body) return;
+  let dragged = null;
+  function bindRow(row) {
+    row.addEventListener('dragstart', event => {
+      if (event.target.closest('button:not(.drag-handle), a, input, select, textarea')) {
+        event.preventDefault();
+        return;
+      }
+      dragged = row;
+      row.classList.add('dragging');
+      setNodeOrderStatus('Перемести строку и отпусти мышь', false);
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      dragged = null;
+    });
+  }
+  getNodeRows().forEach(bindRow);
+  body.addEventListener('dragover', event => {
+    event.preventDefault();
+    if (!dragged) return;
+    const rows = getNodeRows().filter(row => row !== dragged && !row.classList.contains('hidden-by-filter') && !row.classList.contains('hidden-by-page'));
+    const next = rows.find(row => event.clientY <= row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2);
+    body.insertBefore(dragged, next || null);
+  });
+  body.addEventListener('drop', async event => {
+    event.preventDefault();
+    try {
+      await saveNodeOrder(getDesktopNodeOrder());
+      refreshMobileOrderControls();
+    } catch (err) {
+      setNodeOrderStatus(err.message || String(err), true);
+    }
+  });
+}
+
+function initMobileNodeOrder() {
+  const list = document.getElementById('nodesOrderBody');
+  if (!list) return;
+  refreshMobileOrderControls();
+  list.addEventListener('click', async event => {
+    const button = event.target.closest('[data-mobile-move]');
+    if (!button || button.disabled) return;
+    const row = button.closest('.node-list-row');
+    if (!row) return;
+    const direction = button.dataset.mobileMove;
+    if (direction === 'up' && row.previousElementSibling) {
+      list.insertBefore(row, row.previousElementSibling);
+    } else if (direction === 'down' && row.nextElementSibling) {
+      list.insertBefore(row.nextElementSibling, row);
+    } else {
+      return;
+    }
+    refreshMobileOrderControls();
+    try {
+      await saveNodeOrder(getMobileNodeOrder());
+    } catch (err) {
+      setNodeOrderStatus(err.message || String(err), true);
+    }
+  });
+}
+function showLoading(title, text) {
+  const modal = document.getElementById('loadingModal');
+  if (!modal) return;
+  document.getElementById('loadingTitle').textContent = title || 'Загрузка';
+  document.getElementById('loadingText').textContent = text || 'Операция выполняется. Не закрывайте страницу.';
+  modal.classList.remove('hidden');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  initNodeDragOrder();
+  initMobileNodeOrder();
+  initNodeDetailsPanel();
+  document.querySelectorAll('form.js-long-action').forEach(form => {
+    form.addEventListener('submit', () => showLoading(form.dataset.loadingTitle, form.dataset.loadingText));
+  });
+});
+</script>
+
+<%- include('partials_footer') %>
+
+<script>
+(function() {
+  function updateApiMode(select) {
+    const targetId = select.dataset.target;
+    const root = targetId ? document.getElementById(targetId) : select.closest('form');
+    if (!root) return;
+    const mode = select.value === 'token' ? 'token' : 'password';
+    root.querySelectorAll('.auth-password-fields').forEach(el => el.classList.toggle('hidden', mode !== 'password'));
+    root.querySelectorAll('.auth-token-fields').forEach(el => el.classList.toggle('hidden', mode !== 'token'));
+    root.querySelectorAll('[data-required-when]').forEach(input => {
+      const hasSavedSecret = input.dataset.hasSavedSecret === '1';
+      input.required = input.dataset.requiredWhen === mode && !hasSavedSecret;
+    });
+  }
+  function updateH1CloudFingerprint(select) {
+    const form = select.closest('form');
+    if (!form) return;
+    const isCustom = select.value === 'custom';
+    const isH1 = form.querySelector('.js-node-type-select')?.value === 'h1cloud';
+    form.querySelectorAll('.js-h1cloud-custom-fingerprint').forEach(el => el.classList.toggle('hidden', !isH1 || !isCustom));
+    form.querySelectorAll('input[name="h1cloud_fingerprint_custom"]').forEach(input => {
+      input.disabled = !isH1 || !isCustom;
+      input.required = isH1 && isCustom;
+    });
+  }
+  function updateNodeType(select) {
+    const form = select.closest('form');
+    if (!form) return;
+    const isH1 = select.value === 'h1cloud';
+    form.querySelectorAll('.js-node-3xui-only').forEach(el => el.classList.toggle('hidden', isH1));
+    form.querySelectorAll('.js-node-h1-only').forEach(el => el.classList.toggle('hidden', !isH1));
+    form.querySelectorAll('.js-h1cloud-fingerprint-select').forEach(fpSelect => updateH1CloudFingerprint(fpSelect));
+    const authSelect = form.querySelector('.js-api-auth-mode');
+    if (authSelect) {
+      const authField = authSelect.closest('.field');
+      if (isH1) authSelect.value = 'token';
+      if (authField) authField.classList.toggle('hidden', isH1);
+      updateApiMode(authSelect);
+    }
+    const inbound = form.querySelector('input[name="inbound_id"]');
+    if (inbound) {
+      inbound.required = !isH1;
+      inbound.disabled = isH1;
+    }
+    form.querySelectorAll('select[name="sni_mode"], select[name="sni_profile_id"], input[name="sni_override"], input[name="panel_path"]').forEach(input => {
+      input.disabled = isH1;
+    });
+  }
+  document.querySelectorAll('.js-api-auth-mode').forEach(select => {
+    select.addEventListener('change', () => updateApiMode(select));
+    updateApiMode(select);
+  });
+  document.querySelectorAll('.js-h1cloud-fingerprint-select').forEach(select => {
+    select.addEventListener('change', () => updateH1CloudFingerprint(select));
+    updateH1CloudFingerprint(select);
+  });
+  document.querySelectorAll('.js-node-type-select').forEach(select => {
+    select.addEventListener('change', () => updateNodeType(select));
+    updateNodeType(select);
+  });
+})();
+</script>

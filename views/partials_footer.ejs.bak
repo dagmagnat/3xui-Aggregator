@@ -1,0 +1,950 @@
+    </main>
+  </div>
+<script>
+(function(){
+  const body = document.body;
+  const toggle = document.querySelector('.mobile-menu-toggle');
+  const backdrop = document.querySelector('[data-close-mobile-menu]');
+  const sidebar = document.getElementById('panelSidebar');
+
+  function setOpen(open){
+    body.classList.toggle('mobile-menu-open', open);
+    if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  if (toggle) toggle.addEventListener('click', function(){
+    const bottomMode = body.classList.contains('mobile-nav-bottom');
+    const isPhone = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
+    if (bottomMode && isPhone) {
+      window.location.href = '/more';
+      return;
+    }
+    setOpen(!body.classList.contains('mobile-menu-open'));
+  });
+  if (backdrop) backdrop.addEventListener('click', function(){ setOpen(false); });
+  if (sidebar) sidebar.addEventListener('click', function(e){
+    if (e.target.closest('a')) setOpen(false);
+  });
+  window.addEventListener('keydown', function(e){ if (e.key === 'Escape') setOpen(false); });
+
+  // Mobile Lite: turn wide tables into readable card rows on phones.
+  // Headers are copied into data-label attributes so every cell can show its label.
+  document.querySelectorAll('table').forEach(function(table){
+    const headers = Array.from(table.querySelectorAll('thead th')).map(function(th){
+      return (th.textContent || '').replace(/\s+/g, ' ').trim();
+    });
+    if (!headers.length) return;
+    table.querySelectorAll('tbody tr').forEach(function(row){
+      Array.from(row.children).forEach(function(cell, index){
+        if (!cell.getAttribute('data-label') && headers[index]) {
+          cell.setAttribute('data-label', headers[index]);
+        }
+      });
+    });
+  });
+
+  // Mobile Lite: make very long action rows easier to tap.
+  document.querySelectorAll('.actions, .button-row, .inline-actions').forEach(function(row){
+    if (row.children.length > 2) row.classList.add('mobile-actions-stack');
+  });
+
+  function syncMobileLitePreference(){
+    const preferMobileLite = body.classList.contains('mobile-lite-auto');
+    if (!preferMobileLite) return;
+    const isPhone = window.matchMedia('(max-width: 900px)').matches;
+    body.classList.toggle('theme-mobile_lite', isPhone);
+    body.classList.toggle('theme-classic', !isPhone);
+  }
+  syncMobileLitePreference();
+
+  // Mobile Lite: long cards become real accordions on phones only.
+  // v6: wrap the whole card content, not only siblings of a nested title.
+  function setupMobileAccordions(){
+    syncMobileLitePreference();
+    if (!body.classList.contains('theme-mobile_lite')) return;
+    const isPhone = window.matchMedia('(max-width: 900px)').matches;
+    document.querySelectorAll('.mobile-collapsible').forEach(function(card){
+      card.classList.toggle('mobile-collapse-enabled', isPhone);
+    });
+    if (!isPhone) return;
+
+    const path = location.pathname;
+    const densePages = /\/(dashboard|diagnostics|telegram-bot|settings|routing|redirects|nodes|clients)/.test(path);
+    const skipSelectors = [
+      '.stats-card', '.modal-card', '.clients-toolbar', '.clients-card', '.modal',
+      '.mobile-never-collapse', '.node-card', '.node-row', '.node-item'
+    ];
+    const skipTitleRe = /^(Список узлов|Поддержка)$/i;
+    const cards = Array.from(document.querySelectorAll('main .card')).filter(function(card){
+      return !skipSelectors.some(function(sel){ return card.matches(sel) || card.closest(sel); });
+    });
+
+    cards.forEach(function(card, index){
+      if (card.dataset.mobileAccordionReady === '1') {
+        const content = card.querySelector(':scope > .mobile-collapse-content');
+        if (content) content.hidden = card.classList.contains('is-collapsed');
+        return;
+      }
+
+      const title = card.querySelector(':scope > h1, :scope > h2, :scope > h3, :scope > .card-title, :scope > .section-title-row h2, :scope > .section-title-row h3');
+      if (!title) return;
+      function cleanSectionTitle(el){
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll('.section-icon').forEach(function(icon){ icon.remove(); });
+        return (clone.textContent || 'Раздел')
+          .replace(/^[\s\p{Extended_Pictographic}\uFE0F]+/u, '')
+          .replace(/\s+/g, ' ')
+          .trim() || 'Раздел';
+      }
+      const titleText = cleanSectionTitle(title);
+      if (skipTitleRe.test(titleText)) return;
+
+      const formFields = card.querySelectorAll('input, select, textarea').length;
+      const rows = card.querySelectorAll('tbody tr').length;
+      const actionCount = card.querySelectorAll('button, .btn, .btn-secondary, .link-btn').length;
+      const itemCount = Math.max(
+        rows,
+        card.querySelectorAll('.kv-item, .diagnostic-card, .top-usage-item, .online-client-row, .order-card, .ticket-card, .live-client-card, .dashboard-client-card').length
+      );
+      const measuredHeight = Math.max(card.scrollHeight, card.getBoundingClientRect().height || 0);
+      const longEnough = measuredHeight > 460 || formFields >= 5 || rows >= 5 || actionCount >= 6 || itemCount > 3;
+      const shouldCollapse = longEnough || (densePages && index > 0 && measuredHeight > 340);
+      if (!shouldCollapse) return;
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'mobile-collapse-toggle';
+      button.innerHTML = '<span class="mobile-collapse-title"></span><span class="mobile-collapse-action" aria-hidden="true">Открыть</span>';
+      button.querySelector('.mobile-collapse-title').textContent = titleText;
+
+      const content = document.createElement('div');
+      content.className = 'mobile-collapse-content';
+
+      while (card.firstChild) content.appendChild(card.firstChild);
+      const titleInContent = Array.from(content.querySelectorAll('h1,h2,h3,.card-title')).find(function(el){
+        return cleanSectionTitle(el) === titleText;
+      });
+      if (titleInContent) titleInContent.classList.add('mobile-original-title-hidden');
+
+      card.appendChild(button);
+      card.appendChild(content);
+      card.classList.add('mobile-collapsible', 'mobile-collapse-enabled', 'is-collapsed');
+      card.dataset.mobileAccordionReady = '1';
+      button.setAttribute('aria-expanded', 'false');
+      const action = button.querySelector('.mobile-collapse-action');
+      function syncCollapseLabel(){
+        const collapsed = card.classList.contains('is-collapsed');
+        content.hidden = collapsed;
+        button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        if (action) action.textContent = collapsed ? 'Открыть' : 'Скрыть';
+      }
+      button.addEventListener('click', function(e){
+        e.preventDefault();
+        card.classList.toggle('is-collapsed');
+        syncCollapseLabel();
+      });
+      syncCollapseLabel();
+    });
+  }
+
+  function setupMobileClientCompact(){
+    if (!body.classList.contains('theme-mobile_lite')) return;
+    document.querySelectorAll('.clients-table tbody tr').forEach(function(row){
+      if (row.dataset.mobileClientReady === '1') return;
+      const td = document.createElement('td');
+      td.className = 'mobile-client-more-cell';
+      td.setAttribute('data-label', '');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn-secondary mobile-client-more-btn';
+      btn.textContent = 'ℹ️ Подробнее';
+      btn.addEventListener('click', function(){
+        const expanded = row.classList.toggle('is-mobile-expanded');
+        btn.textContent = expanded ? 'Свернуть' : 'ℹ️ Подробнее';
+      });
+      td.appendChild(btn);
+      row.appendChild(td);
+      row.dataset.mobileClientReady = '1';
+    });
+  }
+
+  setupMobileAccordions();
+  setupMobileClientCompact();
+  window.addEventListener('resize', function(){ syncMobileLitePreference(); setupMobileAccordions(); setupMobileClientCompact(); setupDesktopPageTabs(); setupPagedLists(); });
+
+  // Mobile Lite v7: final repair pass. Some pages have nested headers and the
+  // automatic wrapper can miss content; this makes every generated accordion
+  // hide/show the actual body consistently.
+  function repairMobileAccordionsV7(){
+    syncMobileLitePreference();
+    if (!body.classList.contains('theme-mobile_lite')) return;
+    if (!window.matchMedia('(max-width: 900px)').matches) return;
+
+    document.querySelectorAll('.mobile-collapsible, .mobile-collapse-enabled').forEach(function(card){
+      const button = card.querySelector(':scope > .mobile-collapse-toggle');
+      if (!button) return;
+      let content = card.querySelector(':scope > .mobile-collapse-content');
+      if (!content) {
+        content = document.createElement('div');
+        content.className = 'mobile-collapse-content';
+        Array.from(card.childNodes).forEach(function(node){
+          if (node === button) return;
+          content.appendChild(node);
+        });
+        card.appendChild(content);
+      }
+
+      const action = button.querySelector('.mobile-collapse-action');
+      function sync(){
+        const collapsed = card.classList.contains('is-collapsed');
+        content.hidden = collapsed;
+        content.style.display = collapsed ? 'none' : '';
+        button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        if (action) action.textContent = collapsed ? 'Открыть' : 'Скрыть';
+      }
+
+      if (button.dataset.v7Bound !== '1') {
+        button.dataset.v7Bound = '1';
+        button.addEventListener('click', function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          card.classList.toggle('is-collapsed');
+          sync();
+        }, true);
+      }
+      sync();
+    });
+  }
+
+  repairMobileAccordionsV7();
+  window.addEventListener('resize', repairMobileAccordionsV7);
+
+
+  // Stage 1 mobile UX: section icons, inline SNI check, floating save and status tips.
+  const sectionIconMap = {
+    'Настройка панели': '🎛️',
+    'Общие настройки': '⚙️',
+    'SNI-профили REALITY': '🛡️',
+    'SNI-профили': '🛡️',
+    'Резервная копия': '💾',
+    'Обновление проекта': '🔄',
+    'Сервер и обслуживание': '🖥️',
+    'Telegram-уведомления': '✈️',
+    'Безопасность': '🔒',
+    'Health Check': '🩺',
+    'Создать перенаправление': '🔀',
+    'Результат проверки соединения': '📶',
+    'Статус helper': '〽️',
+    'Активные правила': '📋',
+    'Опасная зона': '⚠️',
+    'Добавить узел': '🧩',
+    'Подсказка': '💡',
+    'Список узлов': '🗂️',
+    'Проверка узла: напрямую / через редирект': '🧭',
+    'Расхождения клиентов между агрегатором и узлами': '⇄',
+    'Подозрительные клиенты по трафику': '⚠️',
+    'iOS-safe routing / размер JSON': '📱',
+    'Настройки Telegram-бота': '🤖',
+    'Быстрая привязка Telegram ID к клиенту': '🔗',
+    'Объявление': '📣',
+    'Пользователи бота': '👥',
+    'Заявки': '🧾',
+    'Поддержка': '💬',
+    'Сколько было скачано': '⬇️',
+    'Потребление по узлам': '🖧',
+    'Кто больше всего потратил трафика': '🏆',
+    'Сроки заканчиваются в ближайшие 7 дней': '🗓️',
+    'Все клиенты': '👥'
+  };
+
+  function applySectionIcons(){
+    document.querySelectorAll('h2, h3, .mobile-collapse-title').forEach(function(title){
+      if (title.querySelector('.section-icon')) return;
+      const clone = title.cloneNode(true);
+      clone.querySelectorAll('.section-icon').forEach(function(icon){ icon.remove(); });
+      const text = (clone.textContent || '').replace(/^[\s\p{Extended_Pictographic}\uFE0F]+/u, '').replace(/\s+/g,' ').trim();
+      const icon = sectionIconMap[text];
+      if (!icon) return;
+      const span = document.createElement('span');
+      span.className = 'section-icon';
+      span.setAttribute('aria-hidden', 'true');
+      span.textContent = icon;
+      title.insertBefore(span, title.firstChild);
+    });
+  }
+
+  async function runInlineSniCheck(form){
+    const input = form && form.querySelector('input[name="sni"]');
+    const resultBox = form && form.querySelector('[data-sni-check-result]');
+    if (!input || !resultBox) return;
+    const sni = (input.value || '').trim();
+    resultBox.className = 'sni-check-result pending';
+    resultBox.textContent = 'Проверяю SNI...';
+    try {
+      const response = await fetch('/sni-profiles/check.json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sni })
+      });
+      const data = await response.json().catch(function(){ return {}; });
+      if (!response.ok || !data.ok) throw new Error(data.error || 'SNI недоступен');
+      const r = data.result || {};
+      resultBox.className = 'sni-check-result ok';
+      resultBox.innerHTML = '✅ SNI доступен<small>TLS: OK · ответ: ' + (r.latencyMs || '—') + ' мс' + (r.validTo ? ' · сертификат до ' + r.validTo : '') + '</small>';
+    } catch (err) {
+      resultBox.className = 'sni-check-result err';
+      resultBox.innerHTML = '⛔ SNI недоступен<small>' + String(err.message || err).replace(/[<>]/g, '') + '</small>';
+    }
+  }
+
+  document.querySelectorAll('[data-sni-check-button]').forEach(function(button){
+    if (button.dataset.bound === '1') return;
+    button.dataset.bound = '1';
+    button.addEventListener('click', function(){ runInlineSniCheck(button.closest('form')); });
+  });
+
+
+  function setupGlobalFloatingSave(){
+    if (document.querySelector('.global-floating-save')) return;
+
+    function isProbablyDangerForm(form){
+      const action = String(form.getAttribute('action') || '').toLowerCase();
+      if (form.matches('.logout-form, .sidebar-logout, .bulk-delete-form')) return true;
+      if (/delete|remove|logout|toggle|check|extend|sync|import|backup|reorder|revision/.test(action)) return true;
+      const text = String(form.textContent || '').toLowerCase();
+      if (/удалить всех|удалить выбранных|отключить|включить|проверить|импортировать|синхронизация|продлить|logout|выйти/.test(text)) return true;
+      return false;
+    }
+    function findSubmit(form){
+      const buttons = Array.from(form.querySelectorAll('button[type="submit"], input[type="submit"]'));
+      return buttons.find(function(btn){
+        if (btn.disabled) return false;
+        if (btn.classList.contains('danger') || btn.classList.contains('btn-danger')) return false;
+        const label = String(btn.value || btn.textContent || '').toLowerCase();
+        if (/удал|отключ|включ|провер|импорт|синхрон|продл|обновить список|backup/.test(label)) return false;
+        return true;
+      }) || buttons.find(function(btn){ return !btn.disabled; }) || null;
+    }
+    function isTrackable(form){
+      if (!form || form.dataset.globalFloatingSave === 'off') return false;
+      if (String(form.method || '').toLowerCase() !== 'post') return false;
+      if (!form.querySelector('input, select, textarea')) return false;
+      if (isProbablyDangerForm(form)) return false;
+      return !!findSubmit(form);
+    }
+    const forms = Array.from(document.querySelectorAll('main form')).filter(isTrackable);
+    if (!forms.length) return;
+
+    function serialize(form){
+      const fd = new FormData(form);
+      return Array.from(fd.entries())
+        .filter(function(pair){ return !String(pair[0]).startsWith('_'); })
+        .map(function(pair){ return pair[0] + '=' + pair[1]; })
+        .sort()
+        .join('&');
+    }
+
+    const initial = new WeakMap();
+    forms.forEach(function(form){ initial.set(form, serialize(form)); });
+    let activeForm = null;
+    const bar = document.createElement('div');
+    bar.className = 'global-floating-save';
+    bar.innerHTML = '<div><strong>Есть несохранённые изменения</strong><small data-global-save-count>Можно сохранить или отменить правки</small></div><button type="button" class="btn-secondary" data-global-save-reset>Отменить изменения</button><button type="button" class="btn-main" data-global-save-submit>Сохранить</button>';
+    document.body.appendChild(bar);
+    const count = bar.querySelector('[data-global-save-count]');
+
+    function changed(form){ return serialize(form) !== initial.get(form); }
+    function changedForms(){ return forms.filter(changed); }
+    function update(form){
+      const dirty = changedForms();
+      activeForm = form && changed(form) ? form : (dirty[dirty.length - 1] || null);
+      document.body.classList.toggle('has-global-floating-save', dirty.length > 0);
+      bar.classList.toggle('is-visible', dirty.length > 0);
+      forms.forEach(function(f){
+        const isDirty = changed(f);
+        f.querySelectorAll('input, select, textarea').forEach(function(el){ el.classList.toggle('form-dirty-field', isDirty && el.matches(':focus')); });
+      });
+      if (count) count.textContent = dirty.length > 1 ? ('Несохранённых форм: ' + dirty.length) : 'Нажми «Сохранить», чтобы применить изменения';
+    }
+    forms.forEach(function(form){
+      form.addEventListener('input', function(){ update(form); }, true);
+      form.addEventListener('change', function(){ setTimeout(function(){ update(form); }, 0); }, true);
+      form.addEventListener('submit', function(){ bar.classList.remove('is-visible'); document.body.classList.remove('has-global-floating-save'); }, true);
+    });
+    bar.querySelector('[data-global-save-reset]').addEventListener('click', function(){ window.location.reload(); });
+    bar.querySelector('[data-global-save-submit]').addEventListener('click', function(){
+      if (!activeForm) return;
+      const submit = findSubmit(activeForm);
+      if (submit && typeof submit.click === 'function') submit.click();
+      else activeForm.submit();
+    });
+    update(null);
+  }
+
+  function setupMobileFloatingSave(){
+    if (!window.matchMedia || !window.matchMedia('(max-width: 900px)').matches) return;
+    if (document.querySelector('.mobile-floating-save')) return;
+
+    function findMobileSaveSubmit(form){
+      const submits = Array.from(form.querySelectorAll('button[type="submit"], input[type="submit"]'));
+      return submits.find(function(btn){
+        const action = String(btn.getAttribute('formaction') || form.getAttribute('action') || '').toLowerCase();
+        const text = String(btn.value || btn.textContent || '').toLowerCase();
+        if (btn.classList.contains('danger')) return false;
+        if (/delete|remove|logout|toggle|check|test|refresh|sync|import/.test(action)) return false;
+        if (/удал|выйти|отключ|включ|провер|тест|обнов|импорт|синхрон|продлить|создать|отправить|привязать/.test(text)) return false;
+        return true;
+      }) || null;
+    }
+
+    function isSafeSaveForm(form){
+      if (!form || form.dataset.mobileFloatingSave === 'off') return false;
+      if (form.matches('.logout-form, .sidebar-logout, .bulk-delete-form')) return false;
+      if (!form.querySelector('input, textarea, select')) return false;
+      return !!findMobileSaveSubmit(form);
+    }
+
+    const forms = Array.from(document.querySelectorAll('main form[method="post"]')).filter(isSafeSaveForm);
+    if (!forms.length) return;
+    function serializeForm(form){
+      const fd = new FormData(form);
+      return Array.from(fd.entries()).map(function(pair){ return pair[0] + '=' + pair[1]; }).sort().join('&');
+    }
+    const initial = new WeakMap();
+    forms.forEach(function(form){ initial.set(form, serializeForm(form)); form.classList.add('mobile-floating-save-source'); });
+    let activeForm = null;
+    const bar = document.createElement('div');
+    bar.className = 'mobile-floating-save hidden-soft';
+    bar.innerHTML = '<div class="mobile-floating-save-actions"><button type="button" class="btn-secondary" data-mobile-save-reset>Отменить изменения</button><button type="button" class="icon-btn" data-mobile-save-submit>💾 Сохранить</button></div><small>Есть несохранённые изменения</small>';
+    document.body.appendChild(bar);
+    const saveBtn = bar.querySelector('[data-mobile-save-submit]') || bar.querySelector('button');
+    const cancelBtn = bar.querySelector('[data-mobile-save-reset]');
+    if (cancelBtn) cancelBtn.addEventListener('click', function(){ window.location.reload(); });
+    function changed(form){ return serializeForm(form) !== initial.get(form); }
+    function changedForms(){ return forms.filter(changed); }
+    function hide(){
+      activeForm = null;
+      bar.classList.add('hidden-soft');
+      document.body.classList.remove('has-mobile-floating-save');
+    }
+    function showFor(form){
+      const dirty = changedForms();
+      if (!dirty.length) { hide(); return; }
+      activeForm = form && changed(form) ? form : dirty[dirty.length - 1];
+      bar.classList.remove('hidden-soft');
+      document.body.classList.add('has-mobile-floating-save');
+      const small = bar.querySelector('small');
+      if (small) small.textContent = dirty.length > 1 ? ('Несохранённых форм: ' + dirty.length) : 'Есть несохранённые изменения';
+    }
+    forms.forEach(function(form){
+      form.addEventListener('input', function(){ showFor(form); }, true);
+      form.addEventListener('change', function(){ setTimeout(function(){ showFor(form); }, 0); }, true);
+      form.addEventListener('submit', hide, true);
+    });
+    saveBtn.addEventListener('click', function(){
+      if (!activeForm) return;
+      const submit = findMobileSaveSubmit(activeForm) || activeForm.querySelector('button[type="submit"], input[type="submit"]');
+      if (submit && typeof submit.click === 'function') submit.click();
+      else activeForm.submit();
+    });
+  }
+
+  function setupDesktopSettingsTabs(){
+    if (!location.pathname.startsWith('/settings')) return;
+    if (!window.matchMedia || !window.matchMedia('(min-width: 901px)').matches) return;
+    const grid = document.querySelector('main > .grid');
+    if (!grid || grid.dataset.tabsReady === '1') return;
+    const sections = Array.from(grid.querySelectorAll(':scope > section.card'));
+    if (sections.length < 3) return;
+    grid.dataset.tabsReady = '1';
+    grid.classList.add('desktop-settings-grid');
+    const tabMeta = sections.map(function(section, index){
+      const title = (section.querySelector('h2') && section.querySelector('h2').textContent || ('Раздел ' + (index + 1))).replace(/\s+/g,' ').trim();
+      const id = 'settings-tab-' + index;
+      section.id = section.id || id;
+      section.classList.add('settings-tab-panel');
+      section.dataset.settingsTab = id;
+      return { id: id, title: title, section: section };
+    });
+    const tabs = document.createElement('div');
+    tabs.className = 'settings-tabs';
+    tabs.setAttribute('role', 'tablist');
+    tabs.innerHTML = tabMeta.map(function(item, index){
+      return '<button type="button" class="settings-tab-btn" role="tab" data-settings-tab="' + item.id + '">' + item.title + '</button>';
+    }).join('');
+    grid.parentNode.insertBefore(tabs, grid);
+    function activate(id){
+      tabMeta.forEach(function(item){
+        const active = item.id === id;
+        item.section.classList.toggle('is-active', active);
+        item.section.classList.toggle('settings-tab-hidden', !active);
+      });
+      tabs.querySelectorAll('[data-settings-tab]').forEach(function(btn){
+        btn.classList.toggle('is-active', btn.getAttribute('data-settings-tab') === id);
+      });
+      // Вкладки настроек не запоминаются при переходе из левого меню.
+    }
+    tabs.addEventListener('click', function(e){
+      const btn = e.target.closest('[data-settings-tab]');
+      if (!btn) return;
+      activate(btn.getAttribute('data-settings-tab'));
+    });
+    const fromUrl = (function(){ try { return new URL(location.href).searchParams.get('settings_tab') || ''; } catch(e) { return ''; } })();
+    activate(tabMeta.some(function(x){ return x.id === fromUrl; }) ? fromUrl : tabMeta[0].id);
+
+    setupGeneralSettingsSubtabs(sections[0]);
+  }
+
+  function setupGeneralSettingsSubtabs(section){
+    if (!section || section.dataset.subtabsReady === '1') return;
+    const formGrid = section.querySelector('form .form-grid');
+    if (!formGrid) return;
+    section.dataset.subtabsReady = '1';
+    const children = Array.from(formGrid.children).filter(function(el){ return el.classList && el.classList.contains('field'); });
+    const groups = [];
+    let current = { title: 'Основное', icon: '⚙️', nodes: [] };
+    function pushCurrent(){ if (current.nodes.length) groups.push(current); }
+    children.forEach(function(el){
+      const h3 = el.querySelector('h3');
+      if (h3) {
+        const text = (h3.textContent || '').trim();
+        pushCurrent();
+        if (text.indexOf('Адреса') >= 0) current = { title: 'Адреса', icon: '🔗', nodes: [el] };
+        else if (text.indexOf('Текст помощи') >= 0) current = { title: 'Текст помощи', icon: '💬', nodes: [el] };
+        else if (text.indexOf('Happ-инфо') >= 0) current = { title: 'Happ-инфо', icon: '📱', nodes: [el] };
+        else if (text.indexOf('JSON/Xray') >= 0) current = { title: 'JSON/Xray', icon: '🧩', nodes: [el] };
+        else if (text.indexOf('Happ:') >= 0) current = { title: 'Happ', icon: '⚡', nodes: [el] };
+        else if (text.indexOf('Доступ') >= 0) current = { title: 'Админка', icon: '🔒', nodes: [el] };
+        else current = { title: text || 'Раздел', icon: '•', nodes: [el] };
+      } else {
+        current.nodes.push(el);
+      }
+    });
+    pushCurrent();
+    if (groups.length < 2) return;
+    const nav = document.createElement('div');
+    nav.className = 'settings-subtabs';
+    const panels = [];
+    groups.forEach(function(group, idx){
+      const id = 'general-subtab-' + idx;
+      const panel = document.createElement('div');
+      panel.className = 'settings-subpanel';
+      panel.dataset.generalSubtab = id;
+      group.nodes.forEach(function(node){ panel.appendChild(node); });
+      formGrid.insertBefore(panel, formGrid.firstChild);
+      panels.push(panel);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'settings-subtab-btn';
+      btn.dataset.generalSubtab = id;
+      btn.innerHTML = '<span>' + group.icon + '</span>' + group.title;
+      nav.appendChild(btn);
+    });
+    formGrid.insertBefore(nav, formGrid.firstChild);
+    function activateSub(id){
+      panels.forEach(function(panel){ panel.classList.toggle('is-active', panel.dataset.generalSubtab === id); });
+      nav.querySelectorAll('button').forEach(function(btn){ btn.classList.toggle('is-active', btn.dataset.generalSubtab === id); });
+    }
+    nav.addEventListener('click', function(e){
+      const btn = e.target.closest('button[data-general-subtab]');
+      if (btn) activateSub(btn.dataset.generalSubtab);
+    });
+    activateSub('general-subtab-0');
+  }
+
+  function ensureStatusInfoModal(){
+    let modal = document.getElementById('clientStatusInfoModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'clientStatusInfoModal';
+    modal.className = 'modal hidden client-status-info-modal';
+    modal.innerHTML = '<div class="modal-card client-status-info-card" role="dialog" aria-modal="true">' +
+      '<button type="button" class="modal-close" data-status-info-close>×</button>' +
+      '<div class="client-status-info-icon" data-status-info-icon></div>' +
+      '<h2 data-status-info-title>Статус клиента</h2>' +
+      '<p data-status-info-text></p>' +
+      '</div>';
+    document.body.appendChild(modal);
+    modal.addEventListener('click', function(e){ if (e.target === modal || e.target.closest('[data-status-info-close]')) modal.classList.add('hidden'); });
+    return modal;
+  }
+  document.querySelectorAll('.client-status-icon, .mobile-status-pill, .quick-status').forEach(function(button){
+    if (button.dataset.bound === '1') return;
+    button.dataset.bound = '1';
+    button.addEventListener('click', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      const text = button.getAttribute('data-status-text') || button.getAttribute('title') || button.textContent || 'Статус клиента';
+      const label = button.getAttribute('data-status-label') || button.getAttribute('title') || button.textContent || 'Статус клиента';
+      const key = ['online','warning','expired','offline'].find(function(k){ return button.classList.contains(k); }) || 'online';
+      const modal = ensureStatusInfoModal();
+      modal.querySelector('[data-status-info-icon]').className = 'client-status-info-icon ' + key;
+      modal.querySelector('[data-status-info-title]').textContent = label.trim() || 'Статус клиента';
+      modal.querySelector('[data-status-info-text]').textContent = text.trim();
+      modal.classList.remove('hidden');
+    });
+  });
+
+
+
+
+  function htmlEscapeClientModal(value){
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function ensureClientQuickModal(){
+    let modal = document.getElementById('clientQuickModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'clientQuickModal';
+    modal.className = 'modal hidden client-quick-modal';
+    modal.innerHTML = '<div class="modal-card client-quick-card" role="dialog" aria-modal="true">' +
+      '<button type="button" class="modal-close" data-client-quick-close>×</button>' +
+      '<div data-client-quick-body></div>' +
+      '</div>';
+    document.body.appendChild(modal);
+    modal.addEventListener('click', function(e){ if (e.target === modal || e.target.closest('[data-client-quick-close]')) modal.classList.add('hidden'); });
+    window.addEventListener('keydown', function(e){ if (e.key === 'Escape') modal.classList.add('hidden'); });
+    return modal;
+  }
+
+  async function openClientQuickCard(id){
+    const modal = ensureClientQuickModal();
+    const bodyEl = modal.querySelector('[data-client-quick-body]');
+    modal.classList.remove('hidden');
+    bodyEl.innerHTML = '<div class="client-quick-loading">Загружаю клиента...</div>';
+    try {
+      const response = await fetch('/clients/' + encodeURIComponent(id) + '/summary.json', { headers: { 'Accept': 'application/json' }});
+      const data = await response.json().catch(function(){ return {}; });
+      if (!response.ok || !data.ok) throw new Error(data.error || 'Не удалось открыть клиента');
+      const c = data.client || {};
+      const nodes = Array.isArray(c.nodes) ? c.nodes : [];
+      function nodeLabel(n){
+        if (typeof n === 'string') return String(n || '').replace(/^🌐\s*/u, '').trim();
+        const name = String((n && (n.title || n.name || n.label)) || '').replace(/^🌐\s*/u, '').trim();
+        const country = String((n && (n.countryName || n.countryNameRu)) || '').trim();
+        const label = (name && name !== 'Узел') ? name : country;
+        return String(label || '').replace(/^🌐\s*/u, '').trim();
+      }
+      function nodeFlag(n){
+        const raw = typeof n === 'object' && n ? n : {};
+        function emojiFromCode(code){
+          const cc = String(code || '').trim().toUpperCase();
+          if (!/^[A-Z]{2}$/.test(cc) || ['ZZ','XX'].indexOf(cc) >= 0) return '';
+          return Array.from(cc).map(function(ch){ return String.fromCodePoint(0x1F1E6 + ch.charCodeAt(0) - 65); }).join('');
+        }
+        const textFlag = String(raw.countryFlag || raw.country_flag || raw.flag || '').trim();
+        const code = String(raw.countryCode || raw.country_code || '').trim();
+        const emoji = (textFlag && textFlag !== '🌐' && !/^[a-z]{2}$/i.test(textFlag)) ? textFlag : emojiFromCode(code || textFlag);
+        return emoji ? htmlEscapeClientModal(emoji) : '';
+      }
+      const cleanNodes = nodes.filter(function(n){ const label = nodeLabel(n); return label && label !== 'Узел'; });
+      const nodesHtml = cleanNodes.length ? cleanNodes.map(function(n){
+        const flag = nodeFlag(n);
+        return '<span class="client-quick-node-chip">' + (flag ? '<span class="client-quick-node-flag">' + flag + '</span>' : '') + '<b>' + htmlEscapeClientModal(nodeLabel(n)) + '</b></span>';
+      }).join('') : '<span class="client-quick-node-chip empty">Узлы не назначены</span>';
+      const trafficText = c.trafficGb && Number(c.trafficGb) > 0 ? c.trafficGb + ' ГБ' : '∞';
+      const limitIpText = c.limitIp && Number(c.limitIp) > 0 ? String(c.limitIp) : '∞';
+      const subLink = c.links && c.links.sub ? String(c.links.sub) : '';
+      const jsonLink = c.links && c.links.json ? String(c.links.json) : '';
+      const openLink = c.links && c.links.open ? String(c.links.open) : '#';
+      const editorLink = c.links && c.links.editor ? String(c.links.editor) : (c.links && c.links.search ? String(c.links.search) : '/clients');
+      const avatarLetter = String(c.login || c.title || 'U').trim().slice(0,1).toUpperCase() || 'U';
+      const createdText = c.createdText || c.createdAt || '—';
+      bodyEl.innerHTML =
+        '<div class="client-quick-hero">' +
+          '<div class="client-quick-avatar">' + htmlEscapeClientModal(avatarLetter) + '</div>' +
+          '<div class="client-quick-title"><h2>' + htmlEscapeClientModal(c.title || c.login || 'Клиент') + '</h2><p>@' + htmlEscapeClientModal(c.login || '-') + '</p></div>' +
+        '</div>' +
+        '<div class="client-quick-status-row"><button type="button" class="client-quick-status-strip quick-status ' + htmlEscapeClientModal(c.statusKey || 'online') + '" data-status-label="' + htmlEscapeClientModal(c.statusLabel || 'Статус') + '" data-status-text="' + htmlEscapeClientModal(c.statusText || '') + '">' + htmlEscapeClientModal(c.statusLabel || 'Статус') + '</button></div>' +
+        (c.comment ? '<div class="client-quick-comment">' + htmlEscapeClientModal(c.comment) + '</div>' : '') +
+        '<div class="client-quick-note ' + htmlEscapeClientModal(c.statusKey || '') + '">' + htmlEscapeClientModal(c.statusText || '') + '</div>' +
+        '<div class="client-quick-section-title">Общая информация</div>' +
+        '<div class="client-quick-info-grid">' +
+          '<div><span>ID клиента</span><strong>#' + htmlEscapeClientModal(c.id || '-') + '</strong></div>' +
+          '<div><span>Логин</span><strong>' + htmlEscapeClientModal(c.login || '-') + '</strong></div>' +
+          '<div><span>Статус</span><strong>' + htmlEscapeClientModal(c.statusLabel || '-') + '</strong></div>' +
+          '<div><span>Тип</span><strong>Основной</strong></div>' +
+          '<div><span>Действует до</span><strong>' + htmlEscapeClientModal(c.expiryText || '∞') + '</strong></div>' +
+          '<div><span>Осталось</span><strong>' + htmlEscapeClientModal(c.daysLeft) + ' дн.</strong></div>' +
+          '<div><span>Трафик</span><strong>' + htmlEscapeClientModal(trafficText) + '</strong></div>' +
+          '<div><span>Лимит дней</span><strong>' + htmlEscapeClientModal(c.durationDays || '∞') + '</strong></div>' +
+          '<div><span>Лимит IP</span><strong>' + htmlEscapeClientModal(limitIpText) + '</strong></div>' +
+          '<div><span>Узлов</span><strong>' + htmlEscapeClientModal(c.nodeCount || 0) + '</strong></div>' +
+          '<div><span>Создан</span><strong>' + htmlEscapeClientModal(createdText) + '</strong></div>' +
+          '<div><span>UUID</span><strong>' + htmlEscapeClientModal(c.uuid || '—') + '</strong></div>' +
+        '</div>' +
+        '<div class="client-quick-section-title">Узлы</div>' +
+        '<div class="client-quick-nodes-grid">' + nodesHtml + '</div>' +
+        '<div class="client-quick-actions modern">' +
+          '<a class="btn-main" href="' + htmlEscapeClientModal(editorLink) + '">✎ Редактировать</a>' +
+          '<a class="btn-secondary" href="' + htmlEscapeClientModal(openLink) + '" target="_blank">Открыть в панели</a>' +
+          '<form method="post" action="/clients/' + encodeURIComponent(String(c.id || '')) + '/toggle" class="client-quick-toggle-form js-long-action" onsubmit="return confirm(&quot;Изменить статус клиента?&quot;)"><button type="submit" class="btn-secondary danger-lite">' + (c.statusKey === 'offline' ? 'Включить' : 'Отключить') + '</button></form>' +
+          '<button type="button" class="btn-secondary" data-copy-label="JSON" data-copy-client-link="' + htmlEscapeClientModal(jsonLink) + '">{ } JSON</button>' +
+          (subLink ? '<button type="button" class="btn-secondary" data-copy-label="SUB" data-copy-client-link="' + htmlEscapeClientModal(subLink) + '">▦ SUB</button>' : '') +
+        '</div>';
+    } catch (err) {
+      bodyEl.innerHTML = '<div class="client-quick-error">' + htmlEscapeClientModal(err.message || err) + '<br><a class="btn-main" href="/clients">Открыть клиентов</a></div>';
+    }
+  }
+
+  window.openClientQuickCard = openClientQuickCard;
+
+  document.addEventListener('click', function(e){
+    const statusBtn = e.target.closest('.client-status-icon, .mobile-status-pill, .quick-status');
+    if (statusBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      const text = statusBtn.getAttribute('data-status-text') || statusBtn.getAttribute('title') || statusBtn.textContent || 'Статус клиента';
+      const label = statusBtn.getAttribute('data-status-label') || statusBtn.getAttribute('title') || statusBtn.textContent || 'Статус клиента';
+      const key = ['online','warning','expired','offline'].find(function(k){ return statusBtn.classList.contains(k); }) || 'online';
+      const modal = ensureStatusInfoModal();
+      modal.querySelector('[data-status-info-icon]').className = 'client-status-info-icon ' + key;
+      modal.querySelector('[data-status-info-title]').textContent = label.trim() || 'Статус клиента';
+      modal.querySelector('[data-status-info-text]').textContent = text.trim();
+      modal.classList.remove('hidden');
+      return;
+    }
+    const quick = e.target.closest('[data-client-quick]');
+    if (quick) {
+      e.preventDefault();
+      openClientQuickCard(quick.getAttribute('data-client-quick'));
+      return;
+    }
+    const copy = e.target.closest('[data-copy-client-link]');
+    if (copy) {
+      const text = copy.getAttribute('data-copy-client-link') || '';
+      if (!text) return;
+      navigator.clipboard.writeText(text).then(function(){ const oldCopyHtml = copy.innerHTML; copy.textContent = 'Скопировано'; setTimeout(function(){ copy.innerHTML = oldCopyHtml; }, 1000); }).catch(function(){ alert('Не удалось скопировать'); });
+    }
+  });
+
+  function setupDesktopPageTabs(){
+    document.querySelectorAll('[data-page-tabs]').forEach(function(tabbar){
+      if (tabbar.dataset.bound === '1') return;
+      tabbar.dataset.bound = '1';
+      const scope = tabbar.parentElement || document;
+      const tabKey = tabbar.dataset.pageTabs || location.pathname.replace(/[^a-z0-9_-]+/gi, '_');
+      const buttons = Array.from(tabbar.querySelectorAll('[data-tab-target]'));
+      const panels = Array.from(scope.querySelectorAll('[data-tab-panel]'));
+      function activate(target, persist){
+        if (!target || !buttons.some(function(btn){ return btn.dataset.tabTarget === target; })) {
+          target = (buttons.find(function(btn){ return btn.classList.contains('is-active'); }) || buttons[0] || {}).dataset?.tabTarget;
+        }
+        if (!target) return;
+        buttons.forEach(function(btn){ btn.classList.toggle('is-active', btn.dataset.tabTarget === target); });
+        panels.forEach(function(panel){ panel.classList.toggle('is-active', panel.dataset.tabPanel === target); });
+        // Не запоминаем вкладку между переходами из левого меню: новый вход в раздел открывает первую вкладку.
+      }
+      tabbar.addEventListener('click', function(e){
+        const btn = e.target.closest('[data-tab-target]');
+        if (!btn) return;
+        e.preventDefault();
+        activate(btn.dataset.tabTarget, true);
+        try {
+          const url = new URL(location.href);
+          url.searchParams.set('tab', btn.dataset.tabTarget);
+          history.replaceState(null, '', url.toString());
+        } catch (_) {}
+      });
+      let initial = '';
+      try {
+        const url = new URL(location.href);
+        initial = url.searchParams.get('tab') || (location.hash || '').replace(/^#tab-/, '');
+        // localStorage намеренно не используем: сохранение вкладки работает только через URL/возврат после формы.
+      } catch (_) {}
+      const current = buttons.find(function(btn){ return btn.dataset.tabTarget === initial; }) || buttons.find(function(btn){ return btn.classList.contains('is-active'); }) || buttons[0];
+      if (current) activate(current.dataset.tabTarget, false);
+    });
+  }
+
+  function setupReturnPositionRestore(){
+    const key = 'agg.return.' + location.pathname;
+    document.addEventListener('submit', function(e){
+      const form = e.target;
+      if (!form || !form.matches || !form.matches('form')) return;
+      try {
+        const activeTabs = {};
+        document.querySelectorAll('[data-page-tabs]').forEach(function(tabbar){
+          const tabKey = tabbar.dataset.pageTabs || 'page';
+          const active = tabbar.querySelector('[data-tab-target].is-active');
+          if (active) activeTabs[tabKey] = active.dataset.tabTarget;
+        });
+        localStorage.setItem(key, JSON.stringify({ y: window.scrollY || 0, tabs: activeTabs, t: Date.now() }));
+      } catch (_) {}
+    }, true);
+    window.addEventListener('load', function(){
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        localStorage.removeItem(key);
+        if (!saved || Date.now() - Number(saved.t || 0) > 120000) return;
+        if (saved.tabs) {
+          Object.keys(saved.tabs).forEach(function(tabKey){
+            const esc = (window.CSS && CSS.escape) ? CSS.escape : function(v){ return String(v).replace(/\"/g, '\\"'); };
+            const tabbar = document.querySelector('[data-page-tabs="' + esc(tabKey) + '"]');
+            const target = saved.tabs[tabKey];
+            const btn = tabbar && tabbar.querySelector('[data-tab-target="' + esc(target) + '"]');
+            if (btn) btn.click();
+          });
+        }
+        const y = Number(saved.y || 0);
+        if (y > 0) setTimeout(function(){ window.scrollTo({ top: y, behavior: 'auto' }); }, 40);
+      } catch (_) {}
+    });
+  }
+
+  function setupPagedLists(){
+    document.querySelectorAll('.paged-list').forEach(function(list){
+      if (list.dataset.pagedReady === '1') return;
+      const pageSize = Math.max(1, Number(list.dataset.pageSize || 6));
+      const items = Array.from(list.children).filter(function(el){ return el.nodeType === 1; });
+      if (items.length <= pageSize) return;
+      list.dataset.pagedReady = '1';
+      let page = 0;
+      const controls = document.createElement('div');
+      controls.className = 'pager-controls';
+      controls.innerHTML = '<button type="button" class="secondary" data-prev>←</button><span></span><button type="button" class="secondary" data-next>→</button>';
+      list.after(controls);
+      const label = controls.querySelector('span');
+      const prev = controls.querySelector('[data-prev]');
+      const next = controls.querySelector('[data-next]');
+      const totalPages = Math.ceil(items.length / pageSize);
+      function renderPage(){
+        items.forEach(function(item, idx){ item.style.display = (idx >= page * pageSize && idx < (page + 1) * pageSize) ? '' : 'none'; });
+        label.textContent = 'Страница ' + (page + 1) + ' из ' + totalPages;
+        prev.disabled = page === 0;
+        next.disabled = page >= totalPages - 1;
+      }
+      prev.addEventListener('click', function(){ if (page > 0) { page -= 1; renderPage(); } });
+      next.addEventListener('click', function(){ if (page < totalPages - 1) { page += 1; renderPage(); } });
+      renderPage();
+    });
+  }
+
+  applySectionIcons();
+  setupDesktopSettingsTabs();
+  setupDesktopPageTabs();
+  setupReturnPositionRestore();
+  setupPagedLists();
+  setupGlobalFloatingSave();
+  setTimeout(applySectionIcons, 80);
+
+})();
+</script>
+<script>
+(function(){
+  function sanitizeDomain(v){ return String(v || '').trim().replace(/^https?:\/\//,'').replace(/[\/].*$/,'').replace(/:\d+$/,''); }
+  const REC = {
+    vless: {
+      raw: ['REALITY обычно использует <strong>RAW/TCP + security=reality</strong>. Рекомендуется домен с TLS 443.', 'SNI: <code>{domain}</code>', 'Target/dest: <code>{domain}:443</code>', 'uTLS: <code>firefox</code> или выбери другой fingerprint из списка', 'Header type: <code>none</code>'],
+      tcp: ['TCP для VLESS обычно аналогичен RAW.', 'SNI: <code>{domain}</code>', 'Target/dest: <code>{domain}:443</code>', 'uTLS: <code>firefox</code> или выбери другой fingerprint из списка'],
+      ws: ['WebSocket чаще используют с CDN/доменом.', 'Path: <code>/{slug}</code>', 'Host: <code>{domain}</code>', 'TLS/SNI: <code>{domain}</code>'],
+      grpc: ['gRPC требует serviceName и домен.', 'serviceName: <code>{slug}</code>', 'mode: <code>gun</code>', 'SNI/Host: <code>{domain}</code>'],
+      httpupgrade: ['HTTP Upgrade похож на WebSocket.', 'Path: <code>/{slug}</code>', 'Host: <code>{domain}</code>'],
+      xhttp: ['xHTTP: для современных обходов обычно нужен путь и домен.', 'Path: <code>/xhttp-{slug}</code>', 'Host/SNI: <code>{domain}</code>', 'Mode: <code>stream-one</code>', 'XHTTP posts/bytes/interval: <code>10, 1000000, 30</code>'],
+      kcp: ['mKCP лучше использовать только если понимаешь ограничения UDP.', 'Header type: <code>none</code>', 'Seed: можно оставить пустым']
+    },
+    trojan: { raw: ['Trojan обычно использует TLS и домен.', 'SNI: <code>{domain}</code>', 'Transport RAW/TCP или WS', 'Flow Vision не используется.'], ws: ['Trojan + WS: Path <code>/{slug}</code>, Host <code>{domain}</code>.'] },
+    shadowsocks: { raw: ['Shadowsocks обычно не требует SNI/Target.', 'Проверь method/password в оригинальной 3x-ui.', 'Для клиентов агрегатор будет использовать пароль из 3x-ui, если он отдан API.'] },
+    wireguard: { raw: ['WireGuard маршрутизирует по IP/CIDR, не по доменам напрямую.', 'Рекомендуется домен панели/endpoint только если он реально резолвится на сервер.', 'Проверь public/private key, IP peer и AllowedIPs в оригинальной 3x-ui.'] },
+    hysteria: { raw: ['Hysteria/Hysteria2 работает поверх UDP и чаще требует домен с TLS-сертификатом.', 'Рекомендуется использовать домен сервера, а не голый IP, если включена TLS-проверка.', 'Порт должен быть UDP и открыт в firewall.'] },
+    http: { raw: ['HTTP inbound обычно без SNI. Используй только для доверенных сценариев.'] },
+    mixed: { raw: ['Mixed/SOCKS/HTTP inbound обычно без SNI. Проверь авторизацию и порт.'] },
+    tunnel: { raw: ['Tunnel/Dokodemo-door требует target address/port в оригинальной 3x-ui. В агрегаторе лучше загрузить готовый inbound из панели.'] }
+  };
+  function slug(){ return Math.random().toString(36).slice(2, 9); }
+  function lines(protocol, network, domain){
+    const p = REC[protocol] || REC.vless;
+    const arr = p[network] || p.raw || REC.vless.raw;
+    const s = slug();
+    const d = sanitizeDomain(domain) || (protocol === 'hysteria' ? 'vpn.example.com' : 'www.cloudflare.com');
+    return arr.map(x => x.replaceAll('{domain}', d).replaceAll('{slug}', s));
+  }
+  function renderRec(root){
+    const pSel = root.querySelector('[data-rec-protocol]');
+    const nSel = root.querySelector('[data-rec-network]');
+    const dInp = root.querySelector('[data-rec-domain]');
+    const out = root.querySelector('[data-rec-output]');
+    if (!out) return;
+    const protocol = String(pSel && pSel.value || 'vless').toLowerCase();
+    const network = String(nSel && nSel.value || 'raw').toLowerCase();
+    const domain = sanitizeDomain(dInp && dInp.value || '');
+    const items = lines(protocol, network, domain);
+    out.innerHTML = '<strong>Рекомендуется:</strong><ul><li>' + items.join('</li><li>') + '</li></ul>';
+  }
+  function setValue(name, value){
+    const el = document.querySelector('[name="' + name + '"]');
+    if (el && value !== undefined && value !== null) { el.value = value; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }
+  }
+  function applyRec(root){
+    const pSel = root.querySelector('[data-rec-protocol]');
+    const nSel = root.querySelector('[data-rec-network]');
+    const dInp = root.querySelector('[data-rec-domain]');
+    const protocol = String(pSel && pSel.value || 'vless').toLowerCase();
+    const network = String(nSel && nSel.value || 'raw').toLowerCase();
+    const domain = sanitizeDomain(dInp && dInp.value || '') || 'www.cloudflare.com';
+    const s = slug();
+    setValue('inbound_protocol', protocol);
+    setValue('inbound_network', network);
+    if (['vless','trojan','hysteria'].includes(protocol)) {
+      setValue('inbound_sni', domain);
+      setValue('inbound_target', domain + ':443');
+      setValue('inbound_fingerprint_select', 'firefox');
+    }
+    if (network === 'ws' || network === 'httpupgrade') { setValue('inbound_path', '/' + s); setValue('inbound_host', domain); }
+    if (network === 'grpc') { setValue('inbound_service_name', s); setValue('inbound_grpc_mode', 'gun'); }
+    if (network === 'xhttp') { setValue('inbound_path', '/xhttp-' + s); setValue('inbound_host', domain); setValue('inbound_xhttp_mode', 'stream-one'); setValue('inbound_xhttp_sc', '10, 1000000, 30'); }
+    if (network === 'raw' || network === 'tcp' || network === 'kcp') setValue('inbound_header_type', 'none');
+    renderRec(root);
+  }
+  function initRecommendations(){
+    document.querySelectorAll('[data-protocol-recommend-root]').forEach(root => {
+      const pSel = root.querySelector('[data-rec-protocol]');
+      const nSel = root.querySelector('[data-rec-network]');
+      const dInp = root.querySelector('[data-rec-domain]');
+      const syncP = pSel && pSel.dataset.syncSelect ? document.getElementById(pSel.dataset.syncSelect) : null;
+      const syncN = nSel && nSel.dataset.syncSelect ? document.getElementById(nSel.dataset.syncSelect) : null;
+      if (syncP && pSel) pSel.value = String(syncP.value || pSel.value || 'vless').toLowerCase();
+      if (syncN && nSel) nSel.value = String(syncN.value || nSel.value || 'raw').toLowerCase();
+      [pSel,nSel,dInp,syncP,syncN].filter(Boolean).forEach(el => el.addEventListener('input', () => { if (el === syncP && pSel) pSel.value = syncP.value; if (el === syncN && nSel) nSel.value = syncN.value; renderRec(root); }));
+      [pSel,nSel,dInp,syncP,syncN].filter(Boolean).forEach(el => el.addEventListener('change', () => { if (el === syncP && pSel) pSel.value = syncP.value; if (el === syncN && nSel) nSel.value = syncN.value; renderRec(root); }));
+      const btn = root.querySelector('[data-apply-recommendations]');
+      if (btn) btn.addEventListener('click', () => applyRec(root));
+      renderRec(root);
+    });
+  }
+  function initSniModeLocks(){
+    document.querySelectorAll('select[data-sni-source], select[name="sni_mode"]').forEach(select => {
+      const form = select.closest('form') || document;
+      const profileWrap = form.querySelector('[data-sni-profile-field]');
+      const manualWrap = form.querySelector('[data-sni-manual-field]');
+      function sync(){
+        const mode = String(select.value || 'inbound');
+        const profileActive = mode === 'profile';
+        const manualActive = mode === 'manual';
+        if (profileWrap) {
+          profileWrap.classList.toggle('is-disabled-by-sni-mode', !profileActive);
+          profileWrap.querySelectorAll('select,input,textarea').forEach(el => el.disabled = !profileActive);
+        }
+        if (manualWrap) {
+          manualWrap.classList.toggle('is-disabled-by-sni-mode', !manualActive);
+          manualWrap.querySelectorAll('select,input,textarea').forEach(el => el.disabled = !manualActive);
+        }
+      }
+      select.addEventListener('change', sync); sync();
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ initRecommendations(); initSniModeLocks(); });
+  else { initRecommendations(); initSniModeLocks(); }
+})();
+</script>
+
+</body>
+</html>

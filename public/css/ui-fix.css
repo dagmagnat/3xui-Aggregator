@@ -1,0 +1,286 @@
+/* Geometry-only repair layer. Colors intentionally come from nexus.css. */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { width: 100%; overflow-x: clip; }
+body.redesign-stage52 { width: 100%; min-width: 0; overflow-x: clip; }
+body.redesign-stage52 img, body.redesign-stage52 svg, body.redesign-stage52 canvas { max-width: 100%; }
+body.redesign-stage52 .layout,
+body.redesign-stage52 .main,
+body.redesign-stage52 .grid,
+body.redesign-stage52 .card,
+body.redesign-stage52 .table-wrap,
+body.redesign-stage52 form,
+body.redesign-stage52 fieldset { min-width: 0; max-width: 100%; }
+
+/* Desktop: stable content width and denser operational layout. */
+@media (min-width: 901px) {
+  body.redesign-stage52 .layout { min-height: 100vh; }
+  body.redesign-stage52 .sidebar { position: sticky; top: 0; align-self: start; }
+  body.redesign-stage52 .main { width: 100%; max-width: 1680px; margin: 0 auto; }
+  body.redesign-stage52 .topbar { min-height: 58px; display: flex; align-items: flex-start; }
+  body.redesign-stage52 .grid { align-items: stretch; }
+  body.redesign-stage52 .card { overflow: hidden; }
+  body.redesign-stage52 .table-wrap { width: 100%; overflow-x: auto; scrollbar-gutter: stable; }
+  body.redesign-stage52 table { width: 100%; }
+  body.redesign-stage52 .clients-modern-table { min-width: 980px; table-layout: fixed; }
+  body.redesign-stage52 .clients-toolbar,
+  body.redesign-stage52 .client-directory-toolbar { width: auto; min-width: 0; }
+}
+
+/* Shared controls: prevent text and long values from stretching containers. */
+body.redesign-stage52 input:not([type="checkbox"]):not([type="radio"]),
+body.redesign-stage52 select,
+body.redesign-stage52 textarea,
+body.redesign-stage52 button,
+body.redesign-stage52 .btn-main,
+body.redesign-stage52 .btn-secondary,
+body.redesign-stage52 .link-btn { max-width: 100%; }
+body.redesign-stage52 button,
+body.redesign-stage52 .btn-main,
+body.redesign-stage52 .btn-secondary,
+body.redesign-stage52 .link-btn { line-height: 1.2; text-align: center; }
+body.redesign-stage52 code,
+body.redesign-stage52 pre,
+body.redesign-stage52 .mono { overflow-wrap: anywhere; word-break: break-word; }
+body.redesign-stage52 h1,
+body.redesign-stage52 h2,
+body.redesign-stage52 h3,
+body.redesign-stage52 p { max-width: 100%; overflow-wrap: break-word; }
+
+@media (max-width: 900px) {
+  html, body.redesign-stage52 { min-height: 100%; }
+  body.redesign-stage52 { font-size: 14px !important; }
+  body.redesign-stage52 .layout { display: block !important; width: 100% !important; }
+  body.redesign-stage52 .main {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 12px 12px calc(92px + env(safe-area-inset-bottom, 0px)) !important;
+    overflow: visible !important;
+  }
+
+  /* Header stays one clean row; long subtitles are truncated, never overlap. */
+  body.redesign-stage52 .mobile-shellbar {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 1200 !important;
+    display: grid !important;
+    grid-template-columns: 42px minmax(0, 1fr) 42px !important;
+    gap: 10px !important;
+    align-items: center !important;
+    width: 100% !important;
+    min-height: 64px !important;
+    padding: 9px 12px !important;
+  }
+  body.redesign-stage52 .mobile-menu-toggle,
+  body.redesign-stage52 .theme-toggle-mobile {
+    width: 42px !important;
+    min-width: 42px !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    padding: 0 !important;
+  }
+  body.redesign-stage52 .mobile-shell-title { min-width: 0 !important; }
+  body.redesign-stage52 .mobile-shell-title strong,
+  body.redesign-stage52 .mobile-shell-title span {
+    display: block !important;
+    min-width: 0 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  body.redesign-stage52 .mobile-shell-title strong { font-size: 19px !important; line-height: 1.2 !important; }
+  body.redesign-stage52 .mobile-shell-title span { margin-top: 2px !important; font-size: 11px !important; line-height: 1.25 !important; }
+  body.redesign-stage52 .topbar { display: none !important; }
+
+  /* Drawer is completely outside the viewport until opened. */
+  body.redesign-stage52 .sidebar {
+    position: fixed !important;
+    inset: 0 auto 0 0 !important;
+    z-index: 1400 !important;
+    width: min(300px, 86vw) !important;
+    max-width: 86vw !important;
+    height: 100dvh !important;
+    overflow-y: auto !important;
+    transform: translate3d(-105%, 0, 0) !important;
+    transition: transform .2s ease !important;
+  }
+  body.redesign-stage52.mobile-menu-open .sidebar { transform: translate3d(0, 0, 0) !important; }
+  body.redesign-stage52 .mobile-sidebar-backdrop { z-index: 1300 !important; }
+
+  /* General page rhythm. */
+  body.redesign-stage52 .grid { display: grid !important; grid-template-columns: minmax(0, 1fr) !important; gap: 10px !important; }
+  body.redesign-stage52 .grid > *,
+  body.redesign-stage52 [class*="span-"] { grid-column: 1 / -1 !important; width: 100% !important; min-width: 0 !important; }
+  body.redesign-stage52 .card,
+  body.redesign-stage52 .stats-card,
+  body.redesign-stage52 .nodes-list-panel,
+  body.redesign-stage52 .nodes-detail-panel,
+  body.redesign-stage52 .settings-panel {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding: 14px !important;
+    border-radius: 10px !important;
+  }
+  body.redesign-stage52 .card + .card { margin-top: 10px !important; }
+  body.redesign-stage52 .card h1 { font-size: 22px !important; }
+  body.redesign-stage52 .card h2 { font-size: 18px !important; line-height: 1.25 !important; }
+  body.redesign-stage52 .card h3 { font-size: 15px !important; line-height: 1.3 !important; }
+  body.redesign-stage52 .section-title-row { display: flex !important; flex-wrap: wrap !important; gap: 8px !important; align-items: center !important; }
+
+  /* Forms stack predictably and controls keep a useful touch target. */
+  body.redesign-stage52 .form-grid,
+  body.redesign-stage52 .settings-grid,
+  body.redesign-stage52 .field-grid { display: grid !important; grid-template-columns: minmax(0, 1fr) !important; gap: 12px !important; }
+  body.redesign-stage52 .field,
+  body.redesign-stage52 .field.half,
+  body.redesign-stage52 .field.third { width: 100% !important; min-width: 0 !important; grid-column: 1 / -1 !important; }
+  body.redesign-stage52 input:not([type="checkbox"]):not([type="radio"]),
+  body.redesign-stage52 select,
+  body.redesign-stage52 textarea { width: 100% !important; min-width: 0 !important; min-height: 44px !important; font-size: 16px !important; }
+  body.redesign-stage52 textarea { min-height: 110px !important; }
+  body.redesign-stage52 .actions,
+  body.redesign-stage52 .button-row,
+  body.redesign-stage52 .inline-actions,
+  body.redesign-stage52 .btn-row { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px !important; }
+  body.redesign-stage52 .actions > *,
+  body.redesign-stage52 .button-row > *,
+  body.redesign-stage52 .inline-actions > *,
+  body.redesign-stage52 .btn-row > * { width: 100% !important; min-width: 0 !important; margin: 0 !important; }
+
+  /* Tabs scroll horizontally instead of shrinking text into unreadable blocks. */
+  body.redesign-stage52 .desktop-page-tabs { display: none !important; }
+  body.redesign-stage52 .nodes-mobile-tabs,
+  body.redesign-stage52 .mobile-client-tabs,
+  body.redesign-stage52 .client-protocol-tabs {
+    width: 100% !important;
+    max-width: 100% !important;
+    display: flex !important;
+    gap: 6px !important;
+    overflow-x: auto !important;
+    overscroll-behavior-inline: contain !important;
+    scrollbar-width: none !important;
+  }
+  body.redesign-stage52 .nodes-mobile-tabs::-webkit-scrollbar,
+  body.redesign-stage52 .mobile-client-tabs::-webkit-scrollbar,
+  body.redesign-stage52 .client-protocol-tabs::-webkit-scrollbar { display: none !important; }
+  body.redesign-stage52 .nodes-mobile-tabs > *,
+  body.redesign-stage52 .mobile-client-tabs > *,
+  body.redesign-stage52 .client-protocol-tabs > * { flex: 0 0 auto !important; min-width: max-content !important; }
+
+  /* Clients: one-column cards, no competing desktop table. */
+  body.redesign-stage52.page-clients .mobile-client-search-card { display: block !important; margin: 0 0 10px !important; }
+  body.redesign-stage52.page-clients .mobile-client-search-form { display: grid !important; grid-template-columns: minmax(0, 1fr) auto !important; gap: 8px !important; }
+  body.redesign-stage52.page-clients .mobile-client-search-input { min-width: 0 !important; }
+  body.redesign-stage52.page-clients .clients-card { padding: 12px !important; overflow: hidden !important; }
+  body.redesign-stage52.page-clients .clients-modern-table-wrap,
+  body.redesign-stage52.page-clients .desktop-client-split-list,
+  body.redesign-stage52.page-clients .clients-table-wrap { display: none !important; }
+  body.redesign-stage52.page-clients .mobile-client-cards { display: grid !important; grid-template-columns: minmax(0, 1fr) !important; gap: 10px !important; width: 100% !important; }
+  body.redesign-stage52.page-clients .mobile-client-card {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 13px !important;
+    border-radius: 10px !important;
+    overflow: hidden !important;
+  }
+  body.redesign-stage52.page-clients .mobile-client-head {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) !important;
+    gap: 8px !important;
+    align-items: center !important;
+  }
+  body.redesign-stage52.page-clients .mobile-card-check { grid-row: 1 / span 2 !important; }
+  body.redesign-stage52.page-clients .mobile-client-id { min-width: 0 !important; }
+  body.redesign-stage52.page-clients .mobile-status-pill { width: fit-content !important; max-width: 100% !important; justify-self: start !important; min-height: 32px !important; padding: 5px 9px !important; }
+  body.redesign-stage52.page-clients .mobile-client-mainline { display: grid !important; grid-template-columns: minmax(0, 1fr) !important; gap: 2px !important; }
+  body.redesign-stage52.page-clients .mobile-client-name { width: 100% !important; min-width: 0 !important; padding: 0 !important; text-align: left !important; overflow-wrap: anywhere !important; }
+  body.redesign-stage52.page-clients .mobile-client-metrics { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px !important; }
+  body.redesign-stage52.page-clients .mobile-client-metrics > div { min-width: 0 !important; }
+  body.redesign-stage52.page-clients .mobile-client-expiry { overflow-wrap: anywhere !important; }
+  body.redesign-stage52.page-clients .mobile-client-actions { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px !important; width: 100% !important; }
+  body.redesign-stage52.page-clients .mobile-client-actions > * { width: 100% !important; min-width: 0 !important; min-height: 42px !important; margin: 0 !important; }
+  body.redesign-stage52.page-clients .client-overview-strip { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px !important; }
+  body.redesign-stage52.page-clients .client-overview-stat { min-width: 0 !important; min-height: 62px !important; padding: 9px !important; }
+  body.redesign-stage52.page-clients .clients-toolbar,
+  body.redesign-stage52.page-clients .client-directory-toolbar { display: grid !important; grid-template-columns: minmax(0, 1fr) !important; gap: 8px !important; width: 100% !important; }
+
+  /* Nodes and generic tables. */
+  body.redesign-stage52.page-nodes .mobile-node-card,
+  body.redesign-stage52.page-nodes .node-card {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 13px !important;
+    border-radius: 10px !important;
+  }
+  body.redesign-stage52.page-nodes .mobile-node-card-actions { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px !important; }
+  body.redesign-stage52.page-nodes .mobile-node-card-actions > * { width: 100% !important; min-width: 0 !important; }
+  body.redesign-stage52 .table-wrap { width: 100% !important; max-width: 100% !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; }
+  body.redesign-stage52 table { max-width: none !important; }
+
+  /* Bottom navigation: full safe width, no floating oversized capsule. */
+  body.redesign-stage52 .mobile-bottom-nav {
+    position: fixed !important;
+    left: 8px !important;
+    right: 8px !important;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+    z-index: 1250 !important;
+    width: auto !important;
+    height: 66px !important;
+    min-height: 66px !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 2px !important;
+    padding: 5px !important;
+    border-radius: 12px !important;
+  }
+  body.redesign-stage52 .mobile-bottom-nav a {
+    min-width: 0 !important;
+    min-height: 54px !important;
+    padding: 5px 2px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 3px !important;
+    border-radius: 8px !important;
+  }
+  body.redesign-stage52 .mobile-bottom-nav .bn-ico { width: 20px !important; height: 20px !important; }
+  body.redesign-stage52 .mobile-bottom-nav em { display: block !important; width: 100% !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; font-size: 10px !important; line-height: 1.1 !important; font-style: normal !important; }
+
+  /* Modals fit inside the visual viewport and remain scrollable. */
+  body.redesign-stage52 .modal { padding: 10px !important; align-items: center !important; }
+  body.redesign-stage52 .modal-card {
+    width: min(100%, 620px) !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    max-height: calc(100dvh - 20px) !important;
+    margin: 0 !important;
+    padding: 18px 14px !important;
+    overflow: auto !important;
+    border-radius: 10px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  body.redesign-stage52 .main { padding-left: 9px !important; padding-right: 9px !important; }
+  body.redesign-stage52 .mobile-shellbar { padding-left: 9px !important; padding-right: 9px !important; }
+  body.redesign-stage52 .actions,
+  body.redesign-stage52 .button-row,
+  body.redesign-stage52 .inline-actions,
+  body.redesign-stage52 .btn-row { grid-template-columns: minmax(0, 1fr) !important; }
+  body.redesign-stage52.page-clients .mobile-client-actions,
+  body.redesign-stage52.page-nodes .mobile-node-card-actions { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  body.redesign-stage52 .mobile-bottom-nav { left: 5px !important; right: 5px !important; }
+  body.redesign-stage52 .mobile-bottom-nav em { font-size: 9px !important; }
+}

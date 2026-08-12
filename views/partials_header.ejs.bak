@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= typeof pageTitle !== 'undefined' ? pageTitle : '3xui Aggregator' %> — 3xui Aggregator</title>
+  <link rel="stylesheet" href="/css/style.css?v=154" />
+  <link rel="stylesheet" href="/css/redesign.css?v=154" />
+</head>
+<body data-redesign="stage54-dark-slate-compact-final" class="redesign-stage52 <%= typeof panelInterfaceTheme !== 'undefined' && panelInterfaceTheme === 'mobile_lite' ? 'theme-classic mobile-lite-auto' : 'theme-classic' %> <%= typeof panelMobileClientCompact !== 'undefined' && panelMobileClientCompact ? 'mobile-client-compact' : '' %> page-<%= typeof activePage !== 'undefined' ? activePage : 'app' %> mobile-nav-<%= typeof panelMobileNavMode !== 'undefined' ? panelMobileNavMode : 'bottom' %> mobile-size-<%= typeof panelMobileUiScale !== 'undefined' ? panelMobileUiScale : 'compact' %>">
+  <% const currentPath = typeof activePage !== 'undefined' ? activePage : ''; %>
+  <% const moreNavActive = ['more', 'settings', 'redirects', 'diagnostics', 'telegram_bot'].includes(currentPath); %>
+  <div class="mobile-shellbar">
+    <button class="mobile-menu-toggle" type="button" aria-label="Открыть меню" aria-controls="panelSidebar" aria-expanded="false">☰</button>
+    <div class="mobile-shell-title"><strong><%= typeof pageTitle !== 'undefined' ? pageTitle : 'Панель' %></strong><span><%= typeof pageSubtitle !== 'undefined' && pageSubtitle ? pageSubtitle : '' %></span></div>
+  </div>
+  <div class="mobile-sidebar-backdrop" data-close-mobile-menu></div>
+  <nav class="mobile-bottom-nav stage11-bottom-nav" aria-label="Быстрая навигация">
+    <a href="/dashboard" class="<%= currentPath === 'dashboard' ? 'active' : '' %>"><span>⌂</span><em>Дашборд</em></a>
+    <a href="/clients" class="<%= currentPath === 'clients' ? 'active' : '' %>"><span>👥</span><em>Клиенты</em></a>
+    <a href="/nodes" class="<%= currentPath === 'nodes' ? 'active' : '' %>"><span>▦</span><em>Узлы</em></a>
+    <a href="/routing" class="<%= currentPath === 'routing' ? 'active' : '' %>"><span>↝</span><em>Маршрут</em></a>
+    <a href="/more" class="<%= moreNavActive ? 'active' : '' %>"><span>⋯</span><em>Ещё</em></a>
+  </nav>
+  <div class="layout">
+    <aside class="sidebar" id="panelSidebar">
+      <div class="brand desktop-modern-brand">
+        <span class="brand-shield">🛡</span>
+        <span class="brand-text"><strong>3xui Aggregator</strong></span>
+      </div>
+      <nav class="side-nav desktop-modern-nav">
+        <a href="/dashboard" class="<%= currentPath === 'dashboard' ? 'active' : '' %>"><span class="nav-icon">📊</span><span>Дашборд</span></a>
+        <a href="/nodes" class="<%= currentPath === 'nodes' ? 'active' : '' %>"><span class="nav-icon">🧩</span><span>Узлы</span></a>
+        <a href="/clients" class="<%= currentPath === 'clients' ? 'active' : '' %>"><span class="nav-icon">👥</span><span>Клиенты</span></a>
+        <a href="/routing" class="<%= currentPath === 'routing' ? 'active' : '' %>"><span class="nav-icon">🧭</span><span>Маршрутизация</span></a>
+        <a href="/redirects" class="<%= currentPath === 'redirects' ? 'active' : '' %>"><span class="nav-icon">🔀</span><span>Перенаправление</span></a>
+        <a href="/diagnostics" class="<%= currentPath === 'diagnostics' ? 'active' : '' %>"><span class="nav-icon">🩺</span><span>Диагностика</span></a>
+        <a href="/telegram-bot" class="<%= currentPath === 'telegram_bot' ? 'active' : '' %>"><span class="nav-icon">✈️</span><span>TG-бот</span></a>
+        <a href="/settings" class="<%= currentPath === 'settings' ? 'active' : '' %>"><span class="nav-icon">⚙️</span><span>Настройки</span></a>
+      </nav>
+
+      <div class="sidebar-user-card" aria-label="Текущий пользователь">
+        <div class="sidebar-user-avatar">◎</div>
+        <div class="sidebar-user-meta">
+          <strong><%= typeof currentAdminUsername !== 'undefined' && currentAdminUsername ? currentAdminUsername : 'admin' %></strong>
+          <small>Администратор</small>
+        </div>
+      </div>
+      <form class="logout-form sidebar-logout" method="post" action="/logout">
+        <button type="submit"><span class="logout-icon">↪</span> Выйти</button>
+      </form>
+    </aside>
+
+    <main class="main <%= typeof hidePageHeader !== 'undefined' && hidePageHeader ? 'main-compact-header' : '' %>">
+      <% if (!(typeof hidePageHeader !== 'undefined' && hidePageHeader)) { %>
+        <div class="topbar">
+          <div class="page-intro">
+            <h1><%= typeof pageTitle !== 'undefined' ? pageTitle : '3xui Aggregator' %></h1>
+            <% if (typeof pageSubtitle !== 'undefined' && pageSubtitle) { %>
+              <div class="subtitle"><%= pageSubtitle %></div>
+            <% } %>
+          </div>
+        </div>
+      <% } %>

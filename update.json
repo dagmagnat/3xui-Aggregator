@@ -1,0 +1,7 @@
+{
+  "version": "stage107-nexus-bulk-remove-node-502",
+  "notes": "Исправлен HTTP 502 при массовом удалении выбранных клиентов с узла: актуальный 3x-ui bulkDetach обрабатывается линейными пакетами, старые версии используют безопасный fallback без полных сканирований списка. Прогресс сразу передаётся через Nginx. Сохранены исправления stage105-stage106.",
+  "name": "Nexus Panel 1.0.3 — Bulk Remove Node 502 Fix",
+  "archive": "nexus-panel-fixed-bulk-remove-node-502-2026-08-10.zip",
+  "filename": "nexus-panel-fixed-bulk-remove-node-502-2026-08-10.zip"
+}
