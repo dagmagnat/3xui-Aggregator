@@ -2,7 +2,7 @@
 
 Современная панель управления для агрегации подписок 3x-ui узлов и VPN-сервисов.
 
-![Nexus Panel](https://img.shields.io/badge/version-1.0.4-gray)
+![Nexus Panel](https://img.shields.io/badge/version-1.0.5-gray)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D22-gray)
 ![License](https://img.shields.io/badge/license-MIT-gray)
 
@@ -13,6 +13,7 @@
 - **VPN-сервисы** — управление VPN-конфигурациями
 - **Клиенты** — просмотр и управление подписками
 - **Перенос клиентов** — экспорт/импорт через JSON, интерфейс или SSH с сохранением UUID и `sub_slug`
+- **Перенос настроек** — отдельный зашифрованный пакет с узлами, секретами и конфигурацией панели
 - **Маршрутизация** — гибкая настройка маршрутов
 - **Telegram бот** — интеграция с Telegram для уведомлений
 - **Светлая/Тёмная тема** — переключение цветовой схемы
@@ -55,7 +56,30 @@ npm run dev
 npm run check
 ```
 
-## Перенос клиентов из 3xui-Aggregator в Nexus Panel
+## Перенос настроек и клиентов из 3xui-Aggregator в Nexus Panel
+
+Создайте два отдельных файла. Настройки защищаются парольной фразой и должны импортироваться первыми, чтобы Nexus создал узлы до восстановления связей клиентов:
+
+```bash
+agg settings export /root/aggregator-settings.nxsettings
+agg settings inspect /root/aggregator-settings.nxsettings
+agg clients export /root/aggregator-clients.json
+agg clients inspect /root/aggregator-clients.json
+```
+
+`.nxsettings` переносит настройки подписок, Happ, routing и Telegram, узлы с паролями/API-токенами, кэш inbound, SNI, редиректы и VPN-хосты/сервисы. Клиенты, история, администратор, ключ входа, разрешённые admin IP и адрес развёртывания нового сервера не заменяются. На новом сервере:
+
+```bash
+agg settings import /root/aggregator-settings.nxsettings --dry-run
+agg settings import /root/aggregator-settings.nxsettings
+cd /opt/3xui-aggregator && docker compose restart aggregator
+agg clients import /root/aggregator-clients.json --dry-run --node-mode match
+agg clients import /root/aggregator-clients.json --mode update --node-mode match
+```
+
+Перед настоящим импортом создаётся SQLite-backup. Редиректы и VPN-сервисы импортируются отключёнными до ручной проверки адресов и портов нового VPS.
+
+### Только клиенты
 
 Экспорт работает напрямую с `/opt/3xui-aggregator/data/app.db`, поэтому веб-панель и Docker-контейнер могут не запускаться. На старом сервере выполните:
 

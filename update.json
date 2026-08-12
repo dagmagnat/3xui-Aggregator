@@ -1,7 +1,7 @@
 {
-  "version": "stage108-aggregator-client-transfer-1.0.4-2026-08-12",
-  "notes": "Добавлен совместимый с Nexus Panel перенос клиентов: прямой экспорт из app.db даже при остановленной веб-панели, SSH-команды agg clients export/inspect/import, веб-интерфейс, dry-run, защита конфликтов и автоматический SQLite backup. Rev.2 исправляет установку на Docker-сервере без Node.js на хосте.",
-  "name": "3xui-Aggregator 1.0.4 — Client Transfer to Nexus",
-  "archive": "3xui-aggregator-1.0.4-client-transfer-changed-files.zip",
-  "filename": "3xui-aggregator-1.0.4-client-transfer-changed-files.zip"
+  "version": "stage109-aggregator-settings-transfer-1.0.5-2026-08-12",
+  "notes": "Добавлен отдельный зашифрованный перенос настроек в Nexus: agg settings export/inspect/import, параметры подписок/Happ/routing/Telegram, узлы и секреты, SNI, редиректы и VPN. Секреты перешифровываются на новом сервере, клиенты и параметры входа переносятся отдельно.",
+  "name": "3xui-Aggregator 1.0.5 — Settings and Client Transfer to Nexus",
+  "archive": "3xui-aggregator-1.0.5-transfer-changed-files.zip",
+  "filename": "3xui-aggregator-1.0.5-transfer-changed-files.zip"
 }

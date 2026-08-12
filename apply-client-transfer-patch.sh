@@ -10,14 +10,19 @@ FILES=(
   app.js
   install.sh
   scripts/client-transfer.py
+  scripts/settings-transfer.js
   views/clients.ejs
+  views/settings.ejs
   public/js/client-transfer.js
+  tests/client-transfer.test.js
+  tests/settings-transfer.test.js
   package.json
   package-lock.json
   VERSION
   update.json
   README.md
   PATCH_NOTES_CLIENT_TRANSFER_2026-08-12.md
+  PATCH_NOTES_SETTINGS_TRANSFER_2026-08-12.md
 )
 
 if [ "${EUID}" -ne 0 ]; then
@@ -57,12 +62,13 @@ echo "Накладываю только файлы переноса; data, .env 
 for relative_path in "${FILES[@]}"; do
   install -D -m 0644 "$PATCH_DIR/$relative_path" "$APP_DIR/$relative_path"
 done
-chmod 0755 "$APP_DIR/install.sh" "$APP_DIR/scripts/client-transfer.py"
+chmod 0755 "$APP_DIR/install.sh" "$APP_DIR/scripts/client-transfer.py" "$APP_DIR/scripts/settings-transfer.js"
 
 bash -n "$APP_DIR/install.sh"
 if command -v node >/dev/null 2>&1; then
   node --check "$APP_DIR/app.js"
   node --check "$APP_DIR/public/js/client-transfer.js"
+  node --check "$APP_DIR/scripts/settings-transfer.js"
 else
   echo "Node.js на хосте не установлен — это нормально для Docker-установки. JS-проверка будет выполнена при сборке контейнера."
 fi
@@ -70,6 +76,7 @@ python3 -B "$APP_DIR/scripts/client-transfer.py" --help >/dev/null
 
 echo "SSH-экспорт уже готов и не требует перезапуска панели:"
 echo "  agg clients export /root/aggregator-clients.json"
+echo "  agg settings export /root/aggregator-settings.nxsettings"
 
 if [ "$WITH_UI" = "--with-ui" ]; then
   echo "Собираю образ с кнопкой переноса в интерфейсе..."
