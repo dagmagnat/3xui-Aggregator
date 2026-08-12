@@ -1945,6 +1945,103 @@ PYDIAG
   warn "Если после диагностики всё ещё 502/404 — пришли вывод: cd $APP_DIR && docker compose ps && docker logs --tail=120 $AGG_CONTAINER_NAME"
 }
 
+client_transfer_database_path() {
+  local default_db="$APP_DIR/data/app.db"
+  local configured=""
+  if [ -f "$ENV_FILE" ]; then
+    configured="$(grep -E '^DATA_DIR=' "$ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2- || true)"
+    configured="${configured%\"}"
+    configured="${configured#\"}"
+    configured="${configured%\'}"
+    configured="${configured#\'}"
+  fi
+  if [ -n "$configured" ]; then
+    local candidate=""
+    if [[ "$configured" = /* ]]; then candidate="${configured%/}/app.db"; else candidate="$APP_DIR/${configured%/}/app.db"; fi
+    # DATA_DIR=/app/data is inside Docker; its ordinary host bind source is
+    # APP_DIR/data. Only use another configured host path when it exists.
+    if [ -f "$candidate" ]; then printf '%s\n' "$candidate"; return 0; fi
+  fi
+  printf '%s\n' "$default_db"
+}
+
+client_transfer_help() {
+  cat <<'EOF'
+Перенос клиентов 3xui-Aggregator напрямую через SQLite (веб-панель может быть остановлена).
+
+Команды:
+  agg clients export [FILE]
+  agg clients inspect FILE
+  agg clients import FILE [--mode skip|update|replace] [--node-mode none|match|selected]
+                          [--target-node-ids 1,2] [--dry-run]
+
+Для переноса в Nexus Panel:
+  agg clients export /root/aggregator-clients.json
+
+Проверка/импорт совместимого файла:
+  agg clients inspect /root/aggregator-clients.json
+  agg clients import /root/aggregator-clients.json --dry-run
+
+Безопасный режим импорта: mode=update, node-mode=none.
+UUID и sub_slug сохраняются. Удалённые узлы не вызываются и не изменяются.
+EOF
+}
+
+client_transfer_cli() {
+  require_root
+  refresh_runtime_paths
+
+  local tool="$APP_DIR/scripts/client-transfer.py"
+  local action="${1:-help}"
+  if [ "$action" = "help" ] || [ "$action" = "--help" ] || [ "$action" = "-h" ]; then
+    client_transfer_help
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    err "python3 не найден. Установи: apt-get update && apt-get install -y python3"
+    return 1
+  fi
+  if [ ! -f "$tool" ]; then
+    err "Утилита переноса не найдена: $tool"
+    err "Скопируй scripts/client-transfer.py из обновления Aggregator."
+    return 1
+  fi
+
+  case "$action" in
+    export)
+      shift || true
+      local db_path output_path
+      db_path="$(client_transfer_database_path)"
+      output_path="${1:-/root/aggregator-clients-$(date +%F-%H%M%S).json}"
+      if [ ! -f "$db_path" ]; then err "База клиентов не найдена: $db_path"; return 1; fi
+      say "Экспортирую клиентов из $db_path"
+      python3 "$tool" export --db "$db_path" --output "$output_path"
+      warn "Файл содержит UUID и идентификаторы подписок. Передавай его безопасно и удали после переноса."
+      ;;
+    inspect)
+      shift || true
+      local inspect_path="${1:-}"
+      if [ -z "$inspect_path" ]; then err "Укажи файл: agg clients inspect FILE"; return 1; fi
+      python3 "$tool" inspect --input "$inspect_path"
+      ;;
+    import)
+      shift || true
+      local import_path="${1:-}"
+      if [ -z "$import_path" ]; then err "Укажи файл: agg clients import FILE [параметры]"; return 1; fi
+      shift || true
+      local db_path
+      db_path="$(client_transfer_database_path)"
+      if [ ! -f "$db_path" ]; then err "База Aggregator не найдена: $db_path"; return 1; fi
+      python3 "$tool" import --db "$db_path" --input "$import_path" "$@"
+      ;;
+    *)
+      err "Неизвестная команда clients: $action"
+      client_transfer_help
+      return 1
+      ;;
+  esac
+}
+
 main_menu() {
   echo >&2
   say "Обнаружена существующая установка." >&2
@@ -2029,6 +2126,12 @@ main() {
   print_result
 }
 
+
+if [ "${1:-}" = "clients" ]; then
+  shift || true
+  client_transfer_cli "$@"
+  exit $?
+fi
 
 if [ "${1:-}" = "update" ] || [ "${1:-}" = "--update-files-only" ]; then
   clear || true
